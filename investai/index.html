@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>InvestAI — Consultoria Financeira Inteligente</title>
+  <link rel="stylesheet" href="css/reset.css" />
+  <link rel="stylesheet" href="css/tokens.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/charts.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500&family=DM+Mono:wght@300;400&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js" defer></script>
+</head>
+<body>
+
+  <div class="ia-app" id="app">
+
+    <!-- TOPBAR -->
+    <header class="ia-topbar">
+      <div>
+        <div class="ia-brand">InvestAI</div>
+        <div class="ia-brand-tag">Consultoria financeira inteligente</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <div class="ia-mode-wrap">
+          <button class="ia-mbtn active" id="mbtn-cons" onclick="setMode('cons')">Conservador</button>
+          <button class="ia-mbtn"        id="mbtn-av"   onclick="setMode('av')">Avançado</button>
+        </div>
+        <!-- Plano badge -->
+        <div id="plan-badge" style="display:none;padding:4px 12px;border-radius:var(--radius-pill);font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer" onclick="window.open('landing.html#planos','_blank')"></div>
+        <!-- User menu -->
+        <div id="user-menu" style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:5px 10px;border-radius:var(--radius-sm);background:var(--surface-2);border:1px solid var(--border)" onclick="toggleUserMenu()">
+          <div id="user-avatar" style="width:26px;height:26px;border-radius:50%;background:var(--gold);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:var(--obsidian)"></div>
+          <span id="user-name" style="font-size:12px;color:var(--text-secondary)"></span>
+          <span style="font-size:9px;color:var(--text-tertiary)">▾</span>
+        </div>
+        <div id="user-dropdown" style="display:none;position:absolute;top:56px;right:20px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-md);padding:8px;min-width:180px;z-index:100">
+          <button class="ia-btn-ghost" style="width:100%;text-align:left;margin-bottom:4px" onclick="goTab('onboarding',document.querySelector('[onclick*=onboarding]'))">Meu Perfil</button>
+          <button class="ia-btn-ghost" style="width:100%;text-align:left;margin-bottom:4px" onclick="window.open('landing.html#planos','_blank')">Planos &amp; Preços</button>
+          <div style="height:1px;background:var(--border);margin:4px 0"></div>
+          <button class="ia-btn-ghost" style="width:100%;text-align:left;color:var(--red)" onclick="doLogout()">Sair da conta</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- NAV -->
+    <nav class="ia-nav" id="main-nav" aria-label="Módulos">
+      <button class="ia-ntab active"         onclick="goTab('portfolio',  this)">Portfólio</button>
+      <button class="ia-ntab"                onclick="goTab('radar',      this)">Radar Macro</button>
+      <button class="ia-ntab"                onclick="goTab('score',      this)">Score &amp; Alertas</button>
+      <button class="ia-ntab"                onclick="goTab('oport',      this)">Oportunidades</button>
+      <button class="ia-ntab"                onclick="goTab('alertas',    this)">🔔 Alertas Tempo Real</button>
+      <button class="ia-ntab"                onclick="goTab('calendario', this)">Calendário</button>
+      <button class="ia-ntab"                onclick="goTab('simulador',  this)">Simulador</button>
+      <button class="ia-ntab"                onclick="goTab('diario',     this)">Diário</button>
+      <button class="ia-ntab"                onclick="goTab('metas',      this)">Metas</button>
+      <button class="ia-ntab"                onclick="goTab('painel',     this)">Painel BI</button>
+      <button class="ia-ntab ia-ntab-consultor" onclick="goTab('consultor', this)">Consultor IA</button>
+      <button class="ia-ntab"                onclick="goTab('onboarding', this)">Meu Perfil</button>
+    </nav>
+
+    <!-- PANELS -->
+    <main>
+      <div id="panel-portfolio"  class="ia-panel active"></div>
+      <div id="panel-radar"      class="ia-panel"></div>
+      <div id="panel-score"      class="ia-panel"></div>
+      <div id="panel-oport"      class="ia-panel"></div>
+      <div id="panel-alertas"    class="ia-panel"></div>
+      <div id="panel-calendario" class="ia-panel"></div>
+      <div id="panel-simulador"  class="ia-panel"></div>
+      <div id="panel-diario"     class="ia-panel"></div>
+      <div id="panel-metas"      class="ia-panel"></div>
+      <div id="panel-painel"     class="ia-panel"></div>
+      <div id="panel-consultor"  class="ia-panel"></div>
+      <div id="panel-onboarding" class="ia-panel"></div>
+    </main>
+
+  </div>
+
+  <!-- Glossário modal (injetado via JS) -->
+
+  <!-- SCRIPTS -->
+  <script src="js/config.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/realtime.js"></script>
+  <script src="js/glossario.js"></script>
+  <script src="js/portfolio.js"></script>
+  <script src="js/radar.js"></script>
+  <script src="js/score.js"></script>
+  <script src="js/oportunidades.js"></script>
+  <script src="js/alertas.js"></script>
+  <script src="js/calendario.js"></script>
+  <script src="js/simulador.js"></script>
+  <script src="js/diario.js"></script>
+  <script src="js/metas.js"></script>
+  <script src="js/painel.js"></script>
+  <script src="js/consultor.js"></script>
+  <script src="js/onboarding.js"></script>
+  <script src="js/app.js"></script>
+
+</body>
+</html>

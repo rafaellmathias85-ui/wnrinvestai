@@ -1,0 +1,48 @@
+/* ── DESIGN TOKENS ─────────────────────────────────── */
+:root {
+  /* Backgrounds */
+  --obsidian:     #0C0D0F;
+  --surface:      #111316;
+  --surface-2:    #161A1F;
+  --surface-3:    #1C2128;
+
+  /* Brand */
+  --gold:         #B8965A;
+  --gold-dim:     #7A6038;
+  --gold-pale:    #2A2118;
+
+  /* Text */
+  --text-primary:   #E8EAF0;
+  --text-secondary: #8A8F9A;
+  --text-tertiary:  #4A5060;
+  --platinum:       #C8CDD6;
+
+  /* Semantic */
+  --green:      #3D9970;
+  --green-dim:  #1A3D2D;
+  --red:        #C0392B;
+  --red-dim:    #3D1A16;
+  --amber:      #C07A2B;
+  --amber-dim:  #3D2B10;
+  --blue:       #4A8EC4;
+  --blue-dim:   #0E2033;
+
+  /* Borders */
+  --border:       rgba(255,255,255,0.06);
+  --border-gold:  rgba(184,150,90,0.13);
+
+  /* Nav button */
+  --btn-bg:       #2D3139;
+  --btn-bg-hover: #383E48;
+
+  /* Typography */
+  --font-serif: 'Cormorant Garamond', Georgia, serif;
+  --font-mono:  'DM Mono', 'Courier New', monospace;
+  --font-sans:  'DM Sans', system-ui, sans-serif;
+
+  /* Radius */
+  --radius-sm: 7px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 20px;
+}

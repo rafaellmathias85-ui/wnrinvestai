@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>InvestAI — Entrar</title>
+  <link rel="stylesheet" href="css/reset.css" />
+  <link rel="stylesheet" href="css/tokens.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500&family=DM+Mono:wght@300;400&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--obsidian);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .login-wrap {
+      width: 100%;
+      max-width: 420px;
+    }
+
+    .login-brand {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+    .login-brand-name {
+      font-family: var(--font-serif);
+      font-size: 36px;
+      font-weight: 400;
+      letter-spacing: 0.04em;
+      color: var(--gold);
+    }
+    .login-brand-tag {
+      font-size: 11px;
+      color: var(--text-tertiary);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      margin-top: 4px;
+    }
+
+    .login-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+
+    .login-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+    }
+    .login-tab {
+      flex: 1;
+      padding: 14px;
+      text-align: center;
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      cursor: pointer;
+      color: var(--text-tertiary);
+      background: none;
+      border: none;
+      font-family: var(--font-sans);
+      transition: color 0.2s, background 0.2s;
+    }
+    .login-tab:hover  { color: var(--text-secondary); }
+    .login-tab.active { color: var(--gold); background: var(--surface-2); border-bottom: 2px solid var(--gold); margin-bottom: -1px; }
+
+    .login-body { padding: 28px; }
+
+    .login-fg {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      margin-bottom: 14px;
+    }
+    .login-fg label {
+      font-size: 10px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-tertiary);
+    }
+    .login-fg input {
+      background: var(--surface-2);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 8px;
+      padding: 11px 14px;
+      color: var(--text-primary);
+      font-size: 13px;
+      font-family: var(--font-sans);
+      outline: none;
+      transition: border-color 0.18s;
+      width: 100%;
+    }
+    .login-fg input:focus { border-color: var(--gold-dim); }
+    .login-fg input::placeholder { color: var(--text-tertiary); }
+
+    .login-btn {
+      width: 100%;
+      padding: 13px;
+      background: var(--gold);
+      color: var(--obsidian);
+      border: none;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+      cursor: pointer;
+      font-family: var(--font-sans);
+      transition: opacity 0.2s;
+      margin-top: 4px;
+    }
+    .login-btn:hover    { opacity: 0.88; }
+    .login-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    .login-divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 20px 0;
+    }
+    .login-divider span { font-size: 11px; color: var(--text-tertiary); white-space: nowrap; }
+    .login-divider::before,
+    .login-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    .login-error {
+      background: var(--red-dim);
+      border: 1px solid rgba(192,57,43,0.3);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 12px;
+      color: #E07070;
+      margin-bottom: 14px;
+      display: none;
+    }
+
+    .login-success {
+      background: var(--green-dim);
+      border: 1px solid rgba(61,153,112,0.3);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 12px;
+      color: var(--green);
+      margin-bottom: 14px;
+      display: none;
+    }
+
+    .login-footer {
+      padding: 16px 28px;
+      border-top: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--text-tertiary);
+      text-align: center;
+      line-height: 1.7;
+    }
+
+    /* Loading overlay */
+    .login-loading {
+      position: fixed; inset: 0;
+      background: rgba(12,13,15,0.75);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 999;
+      display: none;
+    }
+    .login-spinner {
+      width: 36px; height: 36px;
+      border: 2px solid var(--border);
+      border-top-color: var(--gold);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="login-loading" id="loading"><div class="login-spinner"></div></div>
+
+  <div class="login-wrap">
+    <div class="login-brand">
+      <div class="login-brand-name">InvestAI</div>
+      <div class="login-brand-tag">Consultoria financeira inteligente</div>
+    </div>
+
+    <div class="login-card">
+      <div class="login-tabs">
+        <button class="login-tab active" id="tab-login"     onclick="switchTab('login')">Entrar</button>
+        <button class="login-tab"        id="tab-register"  onclick="switchTab('register')">Criar conta</button>
+      </div>
+
+      <div class="login-body">
+        <div class="login-error"   id="err-box"></div>
+        <div class="login-success" id="ok-box"></div>
+
+        <!-- ENTRAR -->
+        <div id="form-login">
+          <div class="login-fg">
+            <label>E-mail</label>
+            <input type="email" id="l-email" placeholder="seu@email.com" autocomplete="email" />
+          </div>
+          <div class="login-fg">
+            <label>Senha</label>
+            <input type="password" id="l-pass" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()" />
+          </div>
+          <button class="login-btn" onclick="doLogin()">Entrar</button>
+
+        </div>
+
+        <!-- CRIAR CONTA -->
+        <div id="form-register" style="display:none">
+          <div class="login-fg">
+            <label>Nome completo</label>
+            <input type="text" id="r-name" placeholder="Seu nome" autocomplete="name" />
+          </div>
+          <div class="login-fg">
+            <label>E-mail</label>
+            <input type="email" id="r-email" placeholder="seu@email.com" autocomplete="email" />
+          </div>
+          <div class="login-fg">
+            <label>Senha (mínimo 6 caracteres)</label>
+            <input type="password" id="r-pass" placeholder="••••••••" autocomplete="new-password" />
+          </div>
+          <div class="login-fg">
+            <label>Confirmar senha</label>
+            <input type="password" id="r-pass2" placeholder="••••••••" onkeydown="if(event.key==='Enter')doRegister()" />
+          </div>
+          <button class="login-btn" onclick="doRegister()">Criar conta</button>
+        </div>
+      </div>
+
+      <div class="login-footer">
+        Seus dados ficam armazenados localmente neste navegador.<br>
+        Nenhuma informação é enviada a servidores externos.
+      </div>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/auth.js"></script>
+  <script>
+    // ── Tab switch ───────────────────────────────────────
+    function switchTab(t) {
+      document.getElementById('form-login').style.display    = t === 'login'    ? '' : 'none';
+      document.getElementById('form-register').style.display = t === 'register' ? '' : 'none';
+      document.getElementById('tab-login').classList.toggle('active',    t === 'login');
+      document.getElementById('tab-register').classList.toggle('active', t === 'register');
+      hideMsg();
+    }
+
+    function showErr(msg) {
+      const b = document.getElementById('err-box');
+      b.textContent = msg; b.style.display = 'block';
+      document.getElementById('ok-box').style.display = 'none';
+    }
+    function showOk(msg) {
+      const b = document.getElementById('ok-box');
+      b.textContent = msg; b.style.display = 'block';
+      document.getElementById('err-box').style.display = 'none';
+    }
+    function hideMsg() {
+      document.getElementById('err-box').style.display = 'none';
+      document.getElementById('ok-box').style.display  = 'none';
+    }
+
+    // ── Login ────────────────────────────────────────────
+    function doLogin() {
+      const email = document.getElementById('l-email').value.trim();
+      const pass  = document.getElementById('l-pass').value;
+      if (!email || !pass) { showErr('Preencha e-mail e senha.'); return; }
+      try {
+        Auth.login(email, pass);
+        showOk('Entrando…');
+        setTimeout(() => { window.location.href = 'index.html'; }, 600);
+      } catch(e) { showErr(e.message); }
+    }
+
+    // ── Register ─────────────────────────────────────────
+    function doRegister() {
+      const name  = document.getElementById('r-name').value.trim();
+      const email = document.getElementById('r-email').value.trim();
+      const pass  = document.getElementById('r-pass').value;
+      const pass2 = document.getElementById('r-pass2').value;
+      if (!name)         { showErr('Informe seu nome.'); return; }
+      if (!email)        { showErr('Informe o e-mail.'); return; }
+      if (pass.length < 6) { showErr('Senha deve ter ao menos 6 caracteres.'); return; }
+      if (pass !== pass2)  { showErr('As senhas não conferem.'); return; }
+      try {
+        Auth.register(name, email, pass);
+        showOk('Conta criada! Redirecionando…');
+        setTimeout(() => { window.location.href = 'index.html'; }, 700);
+      } catch(e) { showErr(e.message); }
+    }
+
+    // ── Auto-redirect if already logged ─────────────────
+    if (Auth.isLogged()) window.location.href = 'index.html';
+  </script>
+</body>
+</html>

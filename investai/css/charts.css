@@ -1,0 +1,33 @@
+/* ── PAINEL BI ──────────────────────────────────────── */
+.ia-pbi-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.ia-pbi-full { grid-column: 1 / -1; }
+
+.ia-pbi-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px;
+}
+.ia-pbi-title {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-bottom: 14px;
+}
+
+/* Canvas wrappers */
+.ia-chart-wrap { position: relative; width: 100%; }
+
+/* Responsive: stack BI grid on small screens */
+@media (max-width: 600px) {
+  .ia-pbi-grid { grid-template-columns: 1fr; }
+  .ia-pbi-full { grid-column: 1; }
+  .ia-fgrid3   { grid-template-columns: 1fr; }
+  .ia-fgrid    { grid-template-columns: 1fr; }
+  .ia-sim-row  { grid-template-columns: 100px 1fr 52px; }
+}

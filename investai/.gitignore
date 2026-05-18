@@ -1,0 +1,16 @@
+# Dependências
+node_modules/
+
+# Variáveis de ambiente
+.env
+.env.local
+
+# Nunca commitar a API key
+# Se mover para um backend, adicione o arquivo de config aqui:
+# js/config.local.js
+
+# macOS
+.DS_Store
+
+# VS Code
+.vscode/settings.json
