@@ -100,8 +100,8 @@ const RealTime = {
       fetch('https://api.bcb.gov.br/dados/serie/bcdata.sgs.11/dados/ultimos/1?formato=json').then(r => r.json()),
       // [1] CDI over — BCB série 12
       fetch('https://api.bcb.gov.br/dados/serie/bcdata.sgs.12/dados/ultimos/1?formato=json').then(r => r.json()),
-      // [2] IPCA mensal — BCB série 13522 (últimos 13 meses para acumular 12)
-      fetch('https://api.bcb.gov.br/dados/serie/bcdata.sgs.13522/dados/ultimos/13?formato=json').then(r => r.json()),
+      // [2] IPCA mensal — BCB série 433 (variação mensal %, acumula 12 meses)
+      fetch('https://api.bcb.gov.br/dados/serie/bcdata.sgs.433/dados/ultimos/12?formato=json').then(r => r.json()),
       // [3] USD/BRL — AwesomeAPI
       fetch('https://economia.awesomeapi.com.br/json/last/USD-BRL').then(r => r.json()),
       // [4] Ibovespa — brapi.dev
@@ -112,10 +112,10 @@ const RealTime = {
       fetch('https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX?interval=1d&range=1d').then(r => r.json()),
     ]);
 
-    // SELIC
+    // SELIC (série 11 retorna taxa diária → anualiza ×252)
     if (results[0].status === 'fulfilled') {
       const v = parseFloat(results[0].value[0]?.valor);
-      if (v > 0) this.macro.selic = v;
+      if (v > 0) this.macro.selic = parseFloat((v * 252).toFixed(2));
     }
     // CDI
     if (results[1].status === 'fulfilled') {

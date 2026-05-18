@@ -31,8 +31,8 @@ function renderScore() {
 
   // Benchmark
   const rentBruta = list.length ? list.reduce((s, i) => s + i.rendimento, 0) / list.length : 0;
-  const cdi  = CDI_AA  || 14.15;
-  const ipca = IPCA_AA || 5.53;
+  const cdi  = (RealTime?.macro?.cdi  || 14.65);
+  const ipca = (RealTime?.macro?.ipca || 5.53);
   const vsCDI  = rentBruta - cdi;
   const vsIPCA = rentBruta - ipca;
 
@@ -136,13 +136,13 @@ async function scoreIA(tipo) {
   const list = App.filtered();
   const tot  = list.reduce((s, i) => s + i.saldo, 0);
   const r    = list.map(i => `${i.tipo} "${i.nome}" ${fmtR(i.saldo)} ${i.rendimento}% score ${calcScore(i, tot)}`).join('; ') || 'vazio';
-  const cdi  = CDI_AA || 14.15;
+  const cdi  = (RealTime?.macro?.cdi || 14.65);
 
   const prompts = {
     alertas:      `Portfólio: ${r}. Ativos com risco de desvalorização ou inadequação. Sair agora ou monitorar?`,
     melhoria:     `Portfólio: ${r}. CDI atual: ${cdi}%. Como melhorar a qualidade e superar o CDI? Produtos específicos com percentuais.`,
     concentracao: `Portfólio: ${r}. Como diversificar melhor por ativo, instituição e prazo?`,
-    benchmark:    `Portfólio: ${r}. CDI: ${cdi}%, IPCA: ${IPCA_AA||5.53}%. Quais ativos não batem o CDI líquido? O que substituir para proteger o poder de compra real?`,
+    benchmark:    `Portfólio: ${r}. CDI: ${cdi}%, IPCA: ${RealTime?.macro?.ipca||5.53}%. Quais ativos não batem o CDI líquido? O que substituir para proteger o poder de compra real?`,
   };
 
   try {

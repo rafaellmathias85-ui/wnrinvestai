@@ -7,7 +7,8 @@
 const AlertasState = {
   STORAGE_KEY: 'investai_alertas_v1',
   crypto:   ['BTC', 'ETH', 'SOL'],
-  stocks:   ['PETR4', 'VALE3', 'ITUB4', 'WEGE3'],
+  stocks:   ['PETR4', 'VALE3', 'ITUB4'],
+  fiis:     ['HGLG11', 'XPML11', 'KNRI11'],
   prices:   {},          // preços atuais
   signals:  {},          // { symbol: { sinal, confianca, razao, preco_alvo, stop_loss, ts } }
   alerts:   [],          // alertas de preço configurados
@@ -16,6 +17,7 @@ const AlertasState = {
     const s = Storage.get(this.STORAGE_KEY) || {};
     this.crypto  = s.crypto  || this.crypto;
     this.stocks  = s.stocks  || this.stocks;
+    this.fiis    = s.fiis    || this.fiis;
     this.alerts  = s.alerts  || [];
     this.signals = s.signals || {};
   },
@@ -23,6 +25,7 @@ const AlertasState = {
     Storage.set(this.STORAGE_KEY, {
       crypto:  this.crypto,
       stocks:  this.stocks,
+      fiis:    this.fiis,
       alerts:  this.alerts,
       signals: this.signals,
     });
@@ -64,6 +67,13 @@ function renderAlertas() {
     </div>
     <div id="stocks-grid" class="al-grid"></div>
 
+    <!-- FIIs ───────────────────────────────────────── -->
+    <div class="ia-sec-hd" style="margin-top:8px">
+      <div class="ia-sec-title" style="font-size:14px">Fundos Imobiliários (FII)</div>
+      <button class="ia-btn-ghost" style="font-size:10px" onclick="addWatchItem('fiis')">+ Adicionar</button>
+    </div>
+    <div id="fiis-grid" class="al-grid"></div>
+
     <!-- ANÁLISE GERAL DA IA ─────────────────────────── -->
     <div class="ia-sec-hd" style="margin-top:8px">
       <div class="ia-sec-title" style="font-size:14px">Visão Geral do Mercado</div>
@@ -100,6 +110,7 @@ async function alertasRefresh() {
   await Promise.allSettled([
     _refreshCrypto(),
     _refreshStocks(),
+    _refreshFIIs(),
   ]);
 
   _checkPriceAlerts();
@@ -126,6 +137,17 @@ async function _refreshStocks() {
   } catch(e) {
     const g = document.getElementById('stocks-grid');
     if (g) g.innerHTML = `<div style="color:var(--text-tertiary);font-size:12px;padding:8px">Dados B3 indisponíveis: ${e.message}</div>`;
+  }
+}
+
+async function _refreshFIIs() {
+  try {
+    const data = await RealTime.fetchStocks(AlertasState.fiis);
+    Object.assign(AlertasState.prices, data);
+    _renderFIIsGrid(data);
+  } catch(e) {
+    const g = document.getElementById('fiis-grid');
+    if (g) g.innerHTML = `<div style="color:var(--text-tertiary);font-size:12px;padding:8px">Dados FII indisponíveis: ${e.message}</div>`;
   }
 }
 
@@ -163,6 +185,24 @@ function _renderStocksGrid(data) {
       change:  d.change24h,
       signal:  sig,
       type:    'stock',
+    });
+  }).join('');
+}
+
+function _renderFIIsGrid(data) {
+  const grid = document.getElementById('fiis-grid');
+  if (!grid) return;
+  grid.innerHTML = AlertasState.fiis.map(sym => {
+    const d = data[sym];
+    if (!d) return `<div class="al-card al-card-err">${sym}<br><small>Não encontrado</small></div>`;
+    const sig = AlertasState.signals[sym];
+    return _assetCard({
+      symbol:  sym,
+      name:    d.name,
+      price:   `R$ ${_fmtPrice(d.price)}`,
+      change:  d.change24h,
+      signal:  sig,
+      type:    'fii',
     });
   }).join('');
 }
@@ -298,7 +338,9 @@ Responda em 4 parágrafos:
 
 // ── Adicionar ativo à watchlist ─────────────────────────
 function addWatchItem(type) {
-  const label = type === 'crypto' ? 'símbolo cripto (ex: DOGE, ADA, BNB)' : 'ticker B3 (ex: BBAS3, MGLU3, RENT3)';
+  const label = type === 'crypto' ? 'símbolo cripto (ex: DOGE, ADA, BNB)'
+              : type === 'fiis'   ? 'ticker FII (ex: HGLG11, MXRF11, KNIP11)'
+              : 'ticker B3 (ex: BBAS3, MGLU3, RENT3)';
   const val   = prompt(`Digite o ${label}:`);
   if (!val) return;
   const sym = val.toUpperCase().trim();
@@ -307,6 +349,8 @@ function addWatchItem(type) {
     AlertasState.crypto.push(sym);
   } else if (type === 'stocks' && !AlertasState.stocks.includes(sym)) {
     AlertasState.stocks.push(sym);
+  } else if (type === 'fiis' && !AlertasState.fiis.includes(sym)) {
+    AlertasState.fiis.push(sym);
   }
   AlertasState.save();
   alertasRefresh();
@@ -314,6 +358,7 @@ function addWatchItem(type) {
 
 function removeWatch(symbol, type) {
   if (type === 'crypto') AlertasState.crypto = AlertasState.crypto.filter(s => s !== symbol);
+  else if (type === 'fiis') AlertasState.fiis = AlertasState.fiis.filter(s => s !== symbol);
   else AlertasState.stocks = AlertasState.stocks.filter(s => s !== symbol);
   delete AlertasState.signals[symbol];
   AlertasState.save();

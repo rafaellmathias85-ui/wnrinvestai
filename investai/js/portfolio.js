@@ -291,6 +291,15 @@ function buildPortForm() {
     return `<option value="${v}"${isEdit && (inv.liquidez||'media') === v ? ' selected' : ''}>${lbl}</option>`;
   }).join('');
 
+  // Valores pré-calculados para os chips de benchmark
+  const cdiV   = _cdi().toFixed(2);
+  const c100   = (_cdi() * 1.00).toFixed(2);
+  const c105   = (_cdi() * 1.05).toFixed(2);
+  const c110   = (_cdi() * 1.10).toFixed(2);
+  const selicV = _selic().toFixed(2);
+  const ip3    = (_ipca() + 3).toFixed(2);
+  const ip5    = (_ipca() + 5).toFixed(2);
+
   document.getElementById('port-form-area').innerHTML = `
     <div class="ia-form-box">
       ${isEdit ? `<div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gold);margin-bottom:10px">Editando: ${q(inv.nome)}</div>` : ''}
@@ -303,9 +312,29 @@ function buildPortForm() {
         <div class="ia-fg"><label>Saldo atual (R$)</label><input id="f-saldo" placeholder="0" oninput="fmtI(this)" value="${isEdit ? Math.round(inv.saldo).toLocaleString('pt-BR') : ''}"></div>
         <div class="ia-fg">
           <label>Rentabilidade (% a.a.) <span id="rent-hint" style="font-size:10px;color:var(--gold);font-weight:400"></span></label>
-          <input id="f-rend" type="number" step="0.1" placeholder="Digite ou selecione o tipo" value="${isEdit ? inv.rendimento : ''}">
+          <input id="f-rend" type="number" step="0.01" placeholder="0,00" value="${isEdit ? inv.rendimento : ''}">
         </div>
       </div>
+
+      <div style="margin:4px 0 14px">
+        <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:6px">Benchmarks rápidos:</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+          <button type="button" class="ia-chip" onclick="_setRent('${c100}','100% CDI')">100% CDI (${c100}%)</button>
+          <button type="button" class="ia-chip" onclick="_setRent('${c105}','105% CDI')">105% CDI (${c105}%)</button>
+          <button type="button" class="ia-chip" onclick="_setRent('${c110}','110% CDI')">110% CDI (${c110}%)</button>
+          <button type="button" class="ia-chip" onclick="_setRent('${selicV}','SELIC')">SELIC (${selicV}%)</button>
+          <button type="button" class="ia-chip" onclick="_setRent('${ip3}','IPCA+3%')">IPCA+3% (${ip3}%)</button>
+          <button type="button" class="ia-chip" onclick="_setRent('${ip5}','IPCA+5%')">IPCA+5% (${ip5}%)</button>
+        </div>
+        <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:4px">Buscar rendimento por ativo (ticker B3, cripto):</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="f-ticker-search" placeholder="Ex: PETR4, HGLG11, BTC…" style="flex:1;max-width:240px"
+                 onkeydown="if(event.key==='Enter')_buscarRendimento()">
+          <button type="button" class="ia-btn-ghost" style="font-size:11px" onclick="_buscarRendimento()">Buscar</button>
+        </div>
+        <div id="f-ticker-result" style="font-size:11px;color:var(--text-tertiary);margin-top:5px;min-height:18px"></div>
+      </div>
+
       <div class="ia-fgrid ia-fgrid3">
         <div class="ia-fg"><label>Recorrência mensal (R$)</label><input id="f-rec" placeholder="0" oninput="fmtI(this)" value="${isEdit ? Math.round(inv.recorrencia).toLocaleString('pt-BR') : ''}"></div>
         <div class="ia-fg"><label>Aporte pontual (R$)</label><input id="f-ap" placeholder="0" oninput="fmtI(this)" value="${isEdit ? Math.round(inv.aporte).toLocaleString('pt-BR') : ''}"></div>
@@ -328,6 +357,82 @@ function _onTipoChange(tipo) {
     if (hintEl) hintEl.textContent = '← ' + label;
   } else if (hintEl) {
     hintEl.textContent = sug ? '' : 'Insira manualmente';
+  }
+}
+
+function _setRent(v, label) {
+  const el   = document.getElementById('f-rend');
+  const hint = document.getElementById('rent-hint');
+  if (el) el.value = v;
+  if (hint) hint.textContent = '← ' + label;
+}
+
+async function _fetchAssetYield(ticker) {
+  ticker = ticker.toUpperCase().trim();
+
+  // Aliases de benchmark
+  const bench = { CDI: _cdi, SELIC: _selic, IPCA: _ipca };
+  if (bench[ticker]) return { v: bench[ticker]().toFixed(2), label: ticker + ' atual' };
+
+  // Cripto via CoinGecko
+  const coinId = RealTime.COIN_IDS[ticker];
+  if (coinId) {
+    const r = await fetch(
+      `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart?vs_currency=brl&days=365&interval=daily`
+    );
+    if (!r.ok) throw new Error('CoinGecko indisponível');
+    const d = await r.json();
+    const p = d.prices;
+    if (p?.length >= 2) {
+      const ret = ((p[p.length - 1][1] - p[0][1]) / p[0][1] * 100);
+      return { v: ret.toFixed(2), label: `${ticker} — retorno 12m em BRL` };
+    }
+    throw new Error('Dados insuficientes');
+  }
+
+  // Ações / FIIs via brapi (1 ano histórico + fundamentals)
+  const r = await fetch(
+    `https://brapi.dev/api/quote/${ticker}?range=1y&interval=1mo&fundamental=true`
+  );
+  if (!r.ok) throw new Error('Ativo não encontrado na B3');
+  const json   = await r.json();
+  const result = json.results?.[0];
+  if (!result) throw new Error('Ativo não encontrado');
+
+  // Dividend Yield — especialmente relevante para FIIs
+  if (result.dividendYield && result.dividendYield > 0) {
+    return { v: result.dividendYield.toFixed(2), label: `${result.shortName || ticker} — DY anual` };
+  }
+
+  // Retorno de preço 12m via histórico
+  const hist = result.historicalDataPrice;
+  if (hist?.length >= 2) {
+    const start = hist[0].close || hist[0].open;
+    const end   = hist[hist.length - 1].close || result.regularMarketPrice;
+    if (start && end) {
+      const ret = ((end - start) / start * 100);
+      return { v: ret.toFixed(2), label: `${result.shortName || ticker} — retorno 12m` };
+    }
+  }
+
+  throw new Error('Histórico não disponível — insira % manualmente');
+}
+
+async function _buscarRendimento() {
+  const inp    = document.getElementById('f-ticker-search');
+  const result = document.getElementById('f-ticker-result');
+  if (!inp || !result) return;
+  const ticker = inp.value.trim().toUpperCase();
+  if (!ticker) return;
+
+  result.innerHTML = '<span style="color:var(--text-tertiary)">Buscando…</span>';
+  try {
+    const { v, label } = await _fetchAssetYield(ticker);
+    result.innerHTML = `<span style="color:var(--text-primary)">${label}: <strong>${v}%</strong></span>
+      &nbsp;<button type="button" class="ia-btn-ghost" style="font-size:10px;padding:2px 8px"
+        onclick="_setRent(${JSON.stringify(v)},${JSON.stringify(label)})">Usar</button>`;
+  } catch(e) {
+    result.innerHTML = `<span style="color:var(--red)">${e.message}</span>`;
   }
 }
 
