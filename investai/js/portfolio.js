@@ -5,8 +5,23 @@
 let formOpen   = false;
 let editingIdx = -1;
 
-const CDI_AA  = 14.15;  // CDI atual (sincronizado com RealTime.macro)
-const IPCA_AA = 5.53;
+// Usa dados live do RealTime quando disponível
+function _cdi()  { return RealTime?.macro?.cdi  || 14.65; }
+function _ipca() { return RealTime?.macro?.ipca || 5.53;  }
+function _selic(){ return RealTime?.macro?.selic|| 14.75; }
+
+// Sugestão de rentabilidade por tipo (baseada em CDI/SELIC atuais)
+const RENT_SUGESTAO = {
+  'CDB':            () => ({ v: (_cdi() * 1.10).toFixed(2), label: '110% CDI — CDB competitivo' }),
+  'Tesouro Direto': () => ({ v: (_selic() - 0.10).toFixed(2), label: 'Tesouro Selic (SELIC - 0,1%)' }),
+  'LCI/LCA':        () => ({ v: (_cdi() * 0.92).toFixed(2), label: '92% CDI — isento de IR' }),
+  'Fundo':          () => ({ v: (_cdi() * 1.00).toFixed(2), label: '100% CDI — fundo DI referência' }),
+  'FII':            () => ({ v: '8.50', label: 'Rendimento médio FII (~8,5% a.a.)' }),
+  'Ouro':           () => ({ v: '10.00', label: 'Ouro — estimativa histórica' }),
+  'Ações':          null,
+  'Cripto':         null,
+  'ETF':            null,
+};
 
 function renderPortfolio() {
   const list = App.filtered();
@@ -26,6 +41,7 @@ function renderPortfolio() {
     : '';
 
   // ── Benchmark ─────────────────────────────────────────
+  const CDI_AA   = _cdi();
   const cdiColor = rent >= CDI_AA ? 'ia-pos' : 'ia-neg';
   const cdiLabel = rent >= CDI_AA ? `▲ ${(rent - CDI_AA).toFixed(1)}% acima do CDI` : `▼ ${(CDI_AA - rent).toFixed(1)}% abaixo do CDI`;
 
@@ -35,7 +51,7 @@ function renderPortfolio() {
       <div class="ia-mc"><div class="ia-ml">Patrimônio</div><div class="ia-mv ia-gold">${fmtR(tot)}</div></div>
       <div class="ia-mc"><div class="ia-ml">Rentab. bruta média</div><div class="ia-mv ia-pos">${rent.toFixed(1)}% a.a.</div></div>
       <div class="ia-mc"><div class="ia-ml">Rentab. líquida est.</div><div class="ia-mv ${cdiColor}">${rentLiq.toFixed(1)}% a.a.</div></div>
-      <div class="ia-mc"><div class="ia-ml">vs CDI (${CDI_AA}%)</div><div class="ia-mv ${cdiColor}" style="font-size:12px">${cdiLabel}</div></div>
+      <div class="ia-mc"><div class="ia-ml">vs CDI (${CDI_AA.toFixed(2)}%)</div><div class="ia-mv ${cdiColor}" style="font-size:12px">${cdiLabel}</div></div>
       <div class="ia-mc"><div class="ia-ml">Recorrência/mês</div><div class="ia-mv">${fmtR(rec)}</div></div>
       <div class="ia-mc"><div class="ia-ml">Aportes pontuais</div><div class="ia-mv">${fmtR(ap)}</div></div>
     </div>
@@ -119,11 +135,12 @@ function _rentLiquida(list, tot) {
 
 // ── Rentabilidade líquida por ativo ────────────────────
 function _calcIRliq(inv) {
+  const CDI_AA = _cdi();
   const ISENTOS = ['LCI/LCA'];
   if (ISENTOS.includes(inv.tipo)) {
     return { display: `${inv.rendimento}% ✓`, css: 'ia-pos', tooltip: 'Isento de IR' };
   }
-  const liq = inv.rendimento * 0.85;  // IR 15% (longo prazo)
+  const liq = inv.rendimento * 0.85;
   const css = liq >= CDI_AA * 0.85 ? 'ia-pos' : liq >= CDI_AA * 0.70 ? '' : 'ia-neg';
   return { display: `${liq.toFixed(1)}%`, css, tooltip: `Bruto: ${inv.rendimento}% — IR 15% aprox. (longo prazo)` };
 }
@@ -190,6 +207,7 @@ function buildEvolution(list) {
   if (!tot) return '';
 
   const rec   = list.reduce((s, i) => s + i.recorrencia, 0);
+  const CDI_AA = _cdi();
   const wavg  = list.reduce((s, i) => s + i.rendimento * i.saldo, 0) / tot;
   const mRate = wavg / 100 / 12;
 
@@ -277,13 +295,16 @@ function buildPortForm() {
     <div class="ia-form-box">
       ${isEdit ? `<div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gold);margin-bottom:10px">Editando: ${q(inv.nome)}</div>` : ''}
       <div class="ia-fgrid">
-        <div class="ia-fg"><label>Tipo</label><select id="f-tipo">${selOpts}</select></div>
+        <div class="ia-fg"><label>Tipo</label><select id="f-tipo" onchange="_onTipoChange(this.value)">${selOpts}</select></div>
         <div class="ia-fg"><label>Nome / Descrição</label><input id="f-nome" placeholder="Ex: Tesouro IPCA+ 2029" value="${isEdit ? q(inv.nome) : ''}"></div>
       </div>
       <div class="ia-fgrid ia-fgrid3">
         <div class="ia-fg"><label>Instituição</label><input id="f-banco" placeholder="Ex: XP, Nubank" value="${isEdit ? q(inv.banco) : ''}"></div>
         <div class="ia-fg"><label>Saldo atual (R$)</label><input id="f-saldo" placeholder="0" oninput="fmtI(this)" value="${isEdit ? Math.round(inv.saldo).toLocaleString('pt-BR') : ''}"></div>
-        <div class="ia-fg"><label>Rentabilidade (% a.a.)</label><input id="f-rend" type="number" step="0.1" placeholder="10.5" value="${isEdit ? inv.rendimento : ''}"></div>
+        <div class="ia-fg">
+          <label>Rentabilidade (% a.a.) <span id="rent-hint" style="font-size:10px;color:var(--gold);font-weight:400"></span></label>
+          <input id="f-rend" type="number" step="0.1" placeholder="Digite ou selecione o tipo" value="${isEdit ? inv.rendimento : ''}">
+        </div>
       </div>
       <div class="ia-fgrid ia-fgrid3">
         <div class="ia-fg"><label>Recorrência mensal (R$)</label><input id="f-rec" placeholder="0" oninput="fmtI(this)" value="${isEdit ? Math.round(inv.recorrencia).toLocaleString('pt-BR') : ''}"></div>
@@ -295,6 +316,19 @@ function buildPortForm() {
         <button class="ia-btn-gold"  onclick="saveInv()">${isEdit ? 'Atualizar' : 'Salvar'}</button>
       </div>
     </div>`;
+}
+
+function _onTipoChange(tipo) {
+  const rendInput = document.getElementById('f-rend');
+  const hintEl    = document.getElementById('rent-hint');
+  const sug = RENT_SUGESTAO[tipo];
+  if (sug && rendInput && !rendInput.value) {
+    const { v, label } = sug();
+    rendInput.value = v;
+    if (hintEl) hintEl.textContent = '← ' + label;
+  } else if (hintEl) {
+    hintEl.textContent = sug ? '' : 'Insira manualmente';
+  }
 }
 
 function saveInv() {
