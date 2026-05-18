@@ -86,24 +86,30 @@ const RealTime = {
   },
 
   async _yahooB3Quote(ticker) {
-    const r = await fetch(
-      `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}.SA?interval=1d&range=1d`
-    );
-    if (!r.ok) throw new Error('Yahoo indisponível');
-    const d    = await r.json();
-    const meta = d.chart?.result?.[0]?.meta;
-    if (!meta?.regularMarketPrice) throw new Error('Sem dados');
-    return {
-      symbol:    ticker,
-      name:      meta.shortName || ticker,
-      price:     meta.regularMarketPrice,
-      change24h: meta.regularMarketChangePercent || 0,
-      change:    meta.regularMarketChange || 0,
-      high:      meta.regularMarketDayHigh,
-      low:       meta.regularMarketDayLow,
-      vol:       meta.regularMarketVolume,
-      updatedAt: meta.regularMarketTime,
-    };
+    // Tenta query2 (menos restrito que query1 para ações fora dos EUA)
+    for (const host of ['query2', 'query1']) {
+      try {
+        const r = await fetch(
+          `https://${host}.finance.yahoo.com/v8/finance/chart/${ticker}.SA?interval=1d&range=5d`
+        );
+        if (!r.ok) continue;
+        const d    = await r.json();
+        const meta = d.chart?.result?.[0]?.meta;
+        if (!meta?.regularMarketPrice) continue;
+        return {
+          symbol:    ticker,
+          name:      meta.shortName || ticker,
+          price:     meta.regularMarketPrice,
+          change24h: meta.regularMarketChangePercent || 0,
+          change:    meta.regularMarketChange || 0,
+          high:      meta.regularMarketDayHigh,
+          low:       meta.regularMarketDayLow,
+          vol:       meta.regularMarketVolume,
+          updatedAt: meta.regularMarketTime,
+        };
+      } catch (_) {}
+    }
+    throw new Error('indisponível');
   },
 
   // ── Indicadores macro (atualizados via fetchMacro) ──

@@ -136,7 +136,10 @@ async function _refreshStocks() {
     _renderStocksGrid(data);
   } catch(e) {
     const g = document.getElementById('stocks-grid');
-    if (g) g.innerHTML = `<div style="color:var(--text-tertiary);font-size:12px;padding:8px">Dados B3 indisponíveis: ${e.message}</div>`;
+    if (g) g.innerHTML = `<div style="color:var(--text-tertiary);font-size:12px;padding:8px 0">
+      B3 temporariamente indisponível — mercado opera seg-sex 10h–17h30 BRT.
+      <button class="ia-btn-ghost" style="font-size:10px;padding:3px 10px;margin-left:8px" onclick="_refreshStocks()">Tentar novamente</button>
+    </div>`;
   }
 }
 
@@ -147,7 +150,10 @@ async function _refreshFIIs() {
     _renderFIIsGrid(data);
   } catch(e) {
     const g = document.getElementById('fiis-grid');
-    if (g) g.innerHTML = `<div style="color:var(--text-tertiary);font-size:12px;padding:8px">Dados FII indisponíveis: ${e.message}</div>`;
+    if (g) g.innerHTML = `<div style="color:var(--text-tertiary);font-size:12px;padding:8px 0">
+      FIIs temporariamente indisponível — mercado opera seg-sex 10h–17h30 BRT.
+      <button class="ia-btn-ghost" style="font-size:10px;padding:3px 10px;margin-left:8px" onclick="_refreshFIIs()">Tentar novamente</button>
+    </div>`;
   }
 }
 
@@ -338,20 +344,53 @@ Responda em 4 parágrafos:
 
 // ── Adicionar ativo à watchlist ─────────────────────────
 function addWatchItem(type) {
-  const label = type === 'crypto' ? 'símbolo cripto (ex: DOGE, ADA, BNB)'
-              : type === 'fiis'   ? 'ticker FII (ex: HGLG11, MXRF11, KNIP11)'
-              : 'ticker B3 (ex: BBAS3, MGLU3, RENT3)';
-  const val   = prompt(`Digite o ${label}:`);
-  if (!val) return;
-  const sym = val.toUpperCase().trim();
+  const formId = `add-watch-form-${type}`;
 
-  if (type === 'crypto' && !AlertasState.crypto.includes(sym)) {
+  // Toggle: se já está aberto, fecha
+  const existing = document.getElementById(formId);
+  if (existing) { existing.remove(); return; }
+
+  const gridId = type === 'crypto' ? 'crypto-grid'
+               : type === 'fiis'   ? 'fiis-grid'
+               : 'stocks-grid';
+  const grid = document.getElementById(gridId);
+  if (!grid) return;
+
+  const ph = type === 'crypto' ? 'Ex: DOGE, ADA, BNB'
+           : type === 'fiis'   ? 'Ex: HGLG11, MXRF11, KNIP11'
+           : 'Ex: BBAS3, MGLU3, RENT3';
+
+  const wrap = document.createElement('div');
+  wrap.id = formId;
+  wrap.style.cssText = 'display:flex;gap:8px;align-items:center;padding:8px 0 12px;flex-wrap:wrap';
+  wrap.innerHTML = `
+    <input id="add-watch-inp-${type}" placeholder="${ph}"
+           style="flex:1;min-width:160px;max-width:220px;background:var(--surface-2);border:1px solid var(--border);
+                  border-radius:var(--radius-sm);padding:7px 10px;color:var(--text-primary);font-size:13px"
+           onkeydown="if(event.key==='Enter')_confirmAddWatch('${type}')">
+    <button class="ia-btn-gold" style="font-size:11px;padding:6px 16px"
+            onclick="_confirmAddWatch('${type}')">Adicionar</button>
+    <button class="ia-btn-ghost" style="font-size:11px;padding:6px 10px"
+            onclick="document.getElementById('${formId}').remove()">✕</button>
+  `;
+  grid.before(wrap);
+  setTimeout(() => document.getElementById(`add-watch-inp-${type}`)?.focus(), 50);
+}
+
+function _confirmAddWatch(type) {
+  const inp = document.getElementById(`add-watch-inp-${type}`);
+  if (!inp) return;
+  const sym = inp.value.trim().toUpperCase();
+  if (!sym) return;
+
+  if (type === 'crypto' && !AlertasState.crypto.includes(sym))
     AlertasState.crypto.push(sym);
-  } else if (type === 'stocks' && !AlertasState.stocks.includes(sym)) {
+  else if (type === 'stocks' && !AlertasState.stocks.includes(sym))
     AlertasState.stocks.push(sym);
-  } else if (type === 'fiis' && !AlertasState.fiis.includes(sym)) {
+  else if (type === 'fiis' && !AlertasState.fiis.includes(sym))
     AlertasState.fiis.push(sym);
-  }
+
+  document.getElementById(`add-watch-form-${type}`)?.remove();
   AlertasState.save();
   alertasRefresh();
 }
