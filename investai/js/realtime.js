@@ -40,32 +40,70 @@ const RealTime = {
     return result;
   },
 
-  // ── Ações BR via Brapi.dev ──────────────────────────
+  // ── Ações / FIIs BR — Brapi com fallback Yahoo Finance ──
   async fetchStocks(tickers) {
-    const key  = 'stocks_' + tickers.join('_');
+    const key = 'stocks_' + tickers.join('_');
     if (this._cached(key)) return this._cache[key].data;
 
-    const url = `https://brapi.dev/api/quote/${tickers.join(',')}?fundamental=false`;
-    const res  = await fetch(url);
-    if (!res.ok) throw new Error('Brapi indisponível.');
-    const raw  = await res.json();
+    // Tentativa 1: Brapi
+    try {
+      const url = `https://brapi.dev/api/quote/${tickers.join(',')}?fundamental=false`;
+      const res  = await fetch(url);
+      if (!res.ok) throw new Error('Brapi indisponível');
+      const raw  = await res.json();
+      if (!raw.results?.length) throw new Error('Brapi sem resultados');
 
-    const result = {};
-    (raw.results || []).forEach(q => {
-      result[q.symbol] = {
-        symbol:    q.symbol,
-        name:      q.shortName || q.symbol,
-        price:     q.regularMarketPrice,
-        change24h: q.regularMarketChangePercent || 0,
-        change:    q.regularMarketChange || 0,
-        high:      q.regularMarketDayHigh,
-        low:       q.regularMarketDayLow,
-        vol:       q.regularMarketVolume,
-        updatedAt: q.regularMarketTime,
-      };
+      const result = {};
+      raw.results.forEach(q => {
+        result[q.symbol] = {
+          symbol:    q.symbol,
+          name:      q.shortName || q.symbol,
+          price:     q.regularMarketPrice,
+          change24h: q.regularMarketChangePercent || 0,
+          change:    q.regularMarketChange || 0,
+          high:      q.regularMarketDayHigh,
+          low:       q.regularMarketDayLow,
+          vol:       q.regularMarketVolume,
+          updatedAt: q.regularMarketTime,
+        };
+      });
+      this._cache[key] = { data: result, ts: Date.now() };
+      return result;
+    } catch (_) {}
+
+    // Tentativa 2: Yahoo Finance (.SA)
+    const settled = await Promise.allSettled(tickers.map(t => this._yahooB3Quote(t)));
+    const result  = {};
+    settled.forEach((r, i) => {
+      if (r.status === 'fulfilled') result[tickers[i]] = r.value;
     });
-    this._cache[key] = { data: result, ts: Date.now() };
-    return result;
+    if (Object.keys(result).length) {
+      this._cache[key] = { data: result, ts: Date.now() };
+      return result;
+    }
+
+    throw new Error('Dados B3 temporariamente indisponíveis.');
+  },
+
+  async _yahooB3Quote(ticker) {
+    const r = await fetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}.SA?interval=1d&range=1d`
+    );
+    if (!r.ok) throw new Error('Yahoo indisponível');
+    const d    = await r.json();
+    const meta = d.chart?.result?.[0]?.meta;
+    if (!meta?.regularMarketPrice) throw new Error('Sem dados');
+    return {
+      symbol:    ticker,
+      name:      meta.shortName || ticker,
+      price:     meta.regularMarketPrice,
+      change24h: meta.regularMarketChangePercent || 0,
+      change:    meta.regularMarketChange || 0,
+      high:      meta.regularMarketDayHigh,
+      low:       meta.regularMarketDayLow,
+      vol:       meta.regularMarketVolume,
+      updatedAt: meta.regularMarketTime,
+    };
   },
 
   // ── Indicadores macro (atualizados via fetchMacro) ──
@@ -96,9 +134,9 @@ const RealTime = {
     }
 
     const results = await Promise.allSettled([
-      // [0] SELIC meta — BCB série 11
-      fetch('https://api.bcb.gov.br/dados/serie/bcdata.sgs.11/dados/ultimos/1?formato=json').then(r => r.json()),
-      // [1] CDI over — BCB série 12
+      // [0] SELIC meta — BCB série 432 (% a.a., já anualizada, não precisa de cálculo)
+      fetch('https://api.bcb.gov.br/dados/serie/bcdata.sgs.432/dados/ultimos/1?formato=json').then(r => r.json()),
+      // [1] CDI over — BCB série 12 (taxa diária → anualiza composto)
       fetch('https://api.bcb.gov.br/dados/serie/bcdata.sgs.12/dados/ultimos/1?formato=json').then(r => r.json()),
       // [2] IPCA mensal — BCB série 433 (variação mensal %, acumula 12 meses)
       fetch('https://api.bcb.gov.br/dados/serie/bcdata.sgs.433/dados/ultimos/12?formato=json').then(r => r.json()),
@@ -112,17 +150,17 @@ const RealTime = {
       fetch('https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX?interval=1d&range=1d').then(r => r.json()),
     ]);
 
-    // SELIC (série 11 retorna taxa diária → anualiza ×252)
+    // SELIC meta (série 432 já retorna % a.a. — sem cálculo)
     if (results[0].status === 'fulfilled') {
       const v = parseFloat(results[0].value[0]?.valor);
-      if (v > 0) this.macro.selic = parseFloat((v * 252).toFixed(2));
+      if (v > 0) this.macro.selic = parseFloat(v.toFixed(2));
     }
-    // CDI
+    // CDI (série 12 retorna taxa diária → anualiza com juros compostos)
     if (results[1].status === 'fulfilled') {
       const v = parseFloat(results[1].value[0]?.valor);
-      if (v > 0) this.macro.cdi = v * 252;  // CDI over diário → anual
+      if (v > 0) this.macro.cdi = parseFloat(((Math.pow(1 + v / 100, 252) - 1) * 100).toFixed(2));
     } else {
-      this.macro.cdi = this.macro.selic - 0.1;  // fallback: SELIC - 0.1%
+      this.macro.cdi = parseFloat((this.macro.selic - 0.10).toFixed(2));
     }
     // IPCA 12m acumulado
     if (results[2].status === 'fulfilled') {

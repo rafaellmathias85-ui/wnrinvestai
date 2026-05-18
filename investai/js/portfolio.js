@@ -428,9 +428,10 @@ async function _buscarRendimento() {
   result.innerHTML = '<span style="color:var(--text-tertiary)">Buscando…</span>';
   try {
     const { v, label } = await _fetchAssetYield(ticker);
+    const lSafe = label.replace(/'/g, "\\'");
     result.innerHTML = `<span style="color:var(--text-primary)">${label}: <strong>${v}%</strong></span>
       &nbsp;<button type="button" class="ia-btn-ghost" style="font-size:10px;padding:2px 8px"
-        onclick="_setRent(${JSON.stringify(v)},${JSON.stringify(label)})">Usar</button>`;
+        onclick="_setRent('${v}','${lSafe}')">Usar</button>`;
   } catch(e) {
     result.innerHTML = `<span style="color:var(--red)">${e.message}</span>`;
   }
