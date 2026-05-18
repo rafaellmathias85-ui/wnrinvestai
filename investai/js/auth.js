@@ -134,6 +134,25 @@ const Auth = {
     this._saveUsers(users);
   },
 
+  // Sincroniza plano do backend (chamado após login)
+  async syncPlan() {
+    const s = this.getSession();
+    if (!s || this.ADMINS.includes(s.email)) return;
+    try {
+      const r = await fetch(`/api/plan?email=${encodeURIComponent(s.email)}`);
+      if (!r.ok) return;
+      const { plan, planExp } = await r.json();
+      if (plan && plan !== 'free') {
+        const users = this._users();
+        if (users[s.email]) {
+          users[s.email].plan    = plan;
+          users[s.email].planExp = planExp || null;
+          this._saveUsers(users);
+        }
+      }
+    } catch (_) { /* fallback offline */ }
+  },
+
   logout() { localStorage.removeItem(this.SESSION_KEY); },
 
   prefix() {

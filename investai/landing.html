@@ -706,7 +706,7 @@
         </div>
         <div class="lp-plan-annual" id="annual-pro">&nbsp;</div>
         <div class="lp-plan-desc">Para o investidor que quer monitorar e agir com precisão no mercado.</div>
-        <button class="lp-plan-btn lp-plan-btn-pro" onclick="window.location.href='login.html'">Assinar Pro</button>
+        <button class="lp-plan-btn lp-plan-btn-pro" id="btn-pro" onclick="subscribe('pro')">Assinar Pro</button>
         <ul class="lp-plan-features">
           <li>Portfólio ilimitado</li>
           <li>Radar Macroeconômico</li>
@@ -733,7 +733,7 @@
         </div>
         <div class="lp-plan-annual" id="annual-premium">&nbsp;</div>
         <div class="lp-plan-desc">Experiência completa com IA como seu assessor pessoal de investimentos.</div>
-        <button class="lp-plan-btn lp-plan-btn-premium" onclick="window.location.href='login.html'">Assinar Premium</button>
+        <button class="lp-plan-btn lp-plan-btn-premium" id="btn-premium" onclick="subscribe('premium')">Assinar Premium</button>
         <ul class="lp-plan-features">
           <li>Tudo do Pro</li>
           <li><strong>Consultor IA personalizado</strong></li>
@@ -772,6 +772,41 @@
   <script>
     let isAnnual = false;
 
+    async function subscribe(plan) {
+      const billing = isAnnual ? 'annual' : 'monthly';
+      let email = null;
+      try {
+        const s = JSON.parse(localStorage.getItem('investai_session_v1'));
+        if (s && s.exp > Date.now()) email = s.email;
+      } catch (_) {}
+
+      if (!email) {
+        localStorage.setItem('investai_checkout_intent', JSON.stringify({ plan, billing }));
+        window.location.href = 'login.html';
+        return;
+      }
+
+      const btn = document.getElementById('btn-' + plan);
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Aguarde...';
+
+      try {
+        const r = await fetch('/api/checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, plan, billing }),
+        });
+        const data = await r.json();
+        if (data.url) { window.location.href = data.url; return; }
+        throw new Error(data.error || 'Erro');
+      } catch (e) {
+        alert('Erro ao iniciar pagamento. Tente novamente.');
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }
+    }
+
     function toggleBilling() {
       isAnnual = !isAnnual;
       const toggle = document.getElementById('billing-toggle');
@@ -785,6 +820,37 @@
       document.getElementById('annual-pro').textContent     = isAnnual ? 'R$276/ano — economia de R$72' : ' ';
       document.getElementById('annual-premium').textContent = isAnnual ? 'R$564/ano — economia de R$144' : ' ';
     }
+
+    // Executa checkout automático se voltou do login com intent pendente
+    window.addEventListener('DOMContentLoaded', async () => {
+      const intentRaw = localStorage.getItem('investai_checkout_intent');
+      if (!intentRaw || window.location.hash !== '#planos') return;
+      let intent;
+      try { intent = JSON.parse(intentRaw); } catch (_) { return; }
+
+      let email = null;
+      try {
+        const s = JSON.parse(localStorage.getItem('investai_session_v1'));
+        if (s && s.exp > Date.now()) email = s.email;
+      } catch (_) {}
+      if (!email) return;
+
+      localStorage.removeItem('investai_checkout_intent');
+      const btn = document.getElementById('btn-' + intent.plan);
+      if (btn) { btn.disabled = true; btn.textContent = 'Aguarde...'; }
+
+      try {
+        const r = await fetch('/api/checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, plan: intent.plan, billing: intent.billing }),
+        });
+        const data = await r.json();
+        if (data.url) window.location.href = data.url;
+      } catch (_) {
+        if (btn) { btn.disabled = false; btn.textContent = intent.plan === 'pro' ? 'Assinar Pro' : 'Assinar Premium'; }
+      }
+    });
 
     // Redirect to register tab via hash
     if (window.location.hash === '#register') {

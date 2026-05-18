@@ -282,7 +282,7 @@
       try {
         Auth.login(email, pass);
         showOk('Entrando…');
-        setTimeout(() => { window.location.href = 'index.html'; }, 600);
+        setTimeout(() => { window.location.href = _afterLoginDest(); }, 600);
       } catch(e) { showErr(e.message); }
     }
 
@@ -299,12 +299,19 @@
       try {
         Auth.register(name, email, pass);
         showOk('Conta criada! Redirecionando…');
-        setTimeout(() => { window.location.href = 'index.html'; }, 700);
+        setTimeout(() => { window.location.href = _afterLoginDest(); }, 700);
       } catch(e) { showErr(e.message); }
     }
 
+    // ── Destino pós-login (checkout pendente ou app) ─────
+    function _afterLoginDest() {
+      const intent = localStorage.getItem('investai_checkout_intent');
+      if (intent) return 'landing.html#planos';
+      return 'index.html';
+    }
+
     // ── Auto-redirect if already logged ─────────────────
-    if (Auth.isLogged()) window.location.href = 'index.html';
+    if (Auth.isLogged()) window.location.href = _afterLoginDest();
   </script>
 </body>
 </html>

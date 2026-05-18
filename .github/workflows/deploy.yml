@@ -13,10 +13,6 @@ jobs:
         run: |
           cd /var/www/InvestAI
 
-          if [ ! -d ".git" ]; then
-            git clone https://github.com/rafaellmathias85-ui/investai.git .
-          fi
-
           # Preservar config.js (contém chave da API, não está no git)
           if [ -f "investai/js/config.js" ]; then
             cp investai/js/config.js /tmp/investai_config.backup.js
@@ -29,6 +25,18 @@ jobs:
           # Restaurar config.js após o reset
           if [ -f "/tmp/investai_config.backup.js" ]; then
             cp /tmp/investai_config.backup.js investai/js/config.js
+          fi
+
+          # Instalar dependências do backend
+          cd /var/www/InvestAI/api
+          npm install --production
+
+          # Reiniciar API com PM2
+          if pm2 describe investai-api > /dev/null 2>&1; then
+            pm2 restart investai-api
+          else
+            pm2 start server.js --name investai-api
+            pm2 save
           fi
 
           echo "Deploy InvestAI concluido em $(date)"

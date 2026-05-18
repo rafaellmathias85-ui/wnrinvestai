@@ -14,6 +14,9 @@ const App = {
       return;
     }
 
+    // ── Sincronizar plano com backend ──────────────────
+    await Auth.syncPlan();
+
     // ── Carregar dados do usuário ──────────────────────
     this.portfolio = Storage.get(CONFIG.STORAGE_PORTFOLIO) || [];
     this.diary     = Storage.get(CONFIG.STORAGE_DIARY)     || [];
