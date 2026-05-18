@@ -6,9 +6,9 @@ let formOpen   = false;
 let editingIdx = -1;
 
 // Usa dados live do RealTime quando disponível
-function _cdi()  { return RealTime?.macro?.cdi  || 14.65; }
+function _cdi()  { return RealTime?.macro?.cdi  || 14.40; }
 function _ipca() { return RealTime?.macro?.ipca || 5.53;  }
-function _selic(){ return RealTime?.macro?.selic|| 14.75; }
+function _selic(){ return RealTime?.macro?.selic|| 14.50; }
 
 // Sugestão de rentabilidade por tipo (baseada em CDI/SELIC atuais)
 const RENT_SUGESTAO = {

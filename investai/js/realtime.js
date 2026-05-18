@@ -70,17 +70,17 @@ const RealTime = {
 
   // ── Indicadores macro (atualizados via fetchMacro) ──
   macro: {
-    selic:    14.75,
+    selic:    14.50,
     ipca:     5.53,
     dolar:    5.70,
     vix:      22.1,
     ibov:     135800,
     btc:      103000,
-    cdi:      14.65,
+    cdi:      14.40,
     updatedAt: null,
   },
 
-  MACRO_CACHE_KEY: 'investai_macro_v2',
+  MACRO_CACHE_KEY: 'investai_macro_v3',
   MACRO_TTL: 60 * 60 * 1000,  // 1 hora
 
   async fetchMacro(forceRefresh = false) {
