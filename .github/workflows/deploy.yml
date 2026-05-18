@@ -11,8 +11,6 @@ jobs:
     steps:
       - name: Deploy InvestAI on VPS
         run: |
-          sudo mkdir -p /var/www/InvestAI
-          sudo chown -R $USER:$USER /var/www/InvestAI
           cd /var/www/InvestAI
 
           if [ ! -d ".git" ]; then
