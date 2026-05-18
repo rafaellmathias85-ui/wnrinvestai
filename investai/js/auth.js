@@ -108,10 +108,14 @@ const Auth = {
     if (users[s.email]) { users[s.email].profile = answers; this._saveUsers(users); }
   },
 
+  // Emails com acesso premium permanente (administradores)
+  ADMINS: ['rafaellmathias85@gmail.com'],
+
   // ── Planos ──────────────────────────────────────────────
   getPlan() {
     const u = this.currentUser();
     if (!u) return 'free';
+    if (this.ADMINS.includes(u.email.toLowerCase())) return 'premium';
     if (u.planExp && Date.now() > u.planExp) return 'free';
     return u.plan || 'free';
   },
