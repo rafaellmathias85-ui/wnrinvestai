@@ -9,6 +9,15 @@ jobs:
     runs-on: self-hosted
 
     steps:
+      - name: Backup estado atual do InvestAI
+        run: |
+          mkdir -p /var/backups/investai
+          tar -czf /var/backups/investai/backup-$(date +%Y%m%d-%H%M%S).tar.gz \
+              -C /var/www/InvestAI investai/
+          # Mantém apenas os 5 backups mais recentes
+          ls -t /var/backups/investai/backup-*.tar.gz 2>/dev/null | tail -n +6 | xargs -r rm --
+          echo "Backup criado em /var/backups/investai/"
+
       - name: Deploy InvestAI on VPS
         run: |
           cd /var/www/InvestAI

@@ -16,6 +16,46 @@ const Auth = {
     premium: { label: 'Premium',  portfolioLimit: Infinity, alertas: true, consultor: true, painel: true, oport: true, simulador: true, diario: true, metas: true },
   },
 
+  // ── Validação ─────────────────────────────────────────────
+  _EMAIL_RE: /^[^\s@]{1,64}@[^\s@]{1,255}\.[^\s@]{2,}$/,
+
+  _validateEmail(email) {
+    if (!email || !this._EMAIL_RE.test(email))
+      throw new Error('Formato de e-mail inválido.');
+  },
+
+  _validatePassword(pass) {
+    if (!pass || pass.length < 6)
+      throw new Error('Senha deve ter no mínimo 6 caracteres.');
+    if (pass.length > 128)
+      throw new Error('Senha muito longa.');
+  },
+
+  // ── Proteção contra brute-force ───────────────────────────
+  _loginAttempts: {},   // { email: { count, ts } }
+  _LOCKOUT_MAX:   5,
+  _LOCKOUT_MS:    15 * 60 * 1000,  // 15 minutos
+
+  _checkLockout(email) {
+    const a = this._loginAttempts[email];
+    if (!a || a.count < this._LOCKOUT_MAX) return;
+    const remaining = this._LOCKOUT_MS - (Date.now() - a.ts);
+    if (remaining > 0) {
+      const mins = Math.ceil(remaining / 60000);
+      throw new Error(`Conta bloqueada temporariamente. Tente em ${mins} minuto(s).`);
+    }
+    delete this._loginAttempts[email];
+  },
+
+  _recordFail(email) {
+    if (!this._loginAttempts[email]) this._loginAttempts[email] = { count: 0, ts: 0 };
+    this._loginAttempts[email].count++;
+    this._loginAttempts[email].ts = Date.now();
+  },
+
+  _clearFail(email) { delete this._loginAttempts[email]; },
+
+  // ── Hash simples (client-side; não substitui bcrypt no backend) ──
   _hash(str) {
     let h = 5381;
     for (let i = 0; i < str.length; i++) h = ((h << 5) + h) ^ str.charCodeAt(i);
@@ -30,11 +70,16 @@ const Auth = {
   _saveUsers(u) { localStorage.setItem(this.USERS_KEY, JSON.stringify(u)); },
 
   register(name, email, password) {
+    const key = email.toLowerCase().trim();
+    this._validateEmail(key);
+    this._validatePassword(password);
+    if (!name || name.trim().length < 2) throw new Error('Nome deve ter ao menos 2 caracteres.');
+
     const users = this._users();
-    const key   = email.toLowerCase().trim();
     if (users[key]) throw new Error('Este e-mail já está cadastrado.');
+
     const user = {
-      id: 'u' + Date.now(), name, email: key,
+      id: 'u' + Date.now(), name: name.trim(), email: key,
       ph: this._hash(password), googleId: null,
       avatar: null, profile: null,
       plan: 'free', planExp: null,
@@ -47,12 +92,20 @@ const Auth = {
   },
 
   login(email, password) {
+    const key = email.toLowerCase().trim();
+    this._validateEmail(key);
+    this._checkLockout(key);
+
     const users = this._users();
-    const key   = email.toLowerCase().trim();
     const u     = users[key];
-    if (!u)   throw new Error('E-mail não encontrado.');
+    if (!u) { this._recordFail(key); throw new Error('E-mail não encontrado.'); }
     if (!u.ph) throw new Error('Conta Google — use o botão "Entrar com Google".');
-    if (u.ph !== this._hash(password)) throw new Error('Senha incorreta.');
+    if (u.ph !== this._hash(password)) {
+      this._recordFail(key);
+      throw new Error('Senha incorreta.');
+    }
+
+    this._clearFail(key);
     this._session(u);
     return u;
   },
