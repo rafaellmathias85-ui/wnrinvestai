@@ -163,7 +163,7 @@ async function analisarMeta(idx) {
 
   try {
     const r = await API.ask(
-      `Meta: "${m.nome}". Valor alvo: R$ ${Math.round(m.valor).toLocaleString('pt-BR')}. Acumulado: R$ ${Math.round(m.atual).toLocaleString('pt-BR')} (${pct}%). Prazo: ${meses > 0 ? meses + ' meses' : 'vencido'}. Aporte mensal atual: R$ ${Math.round(m.aporte || 0).toLocaleString('pt-BR')}. Cenário: Selic 14,5%, CDI 14,15%, IPCA 5,53%. Analise a viabilidade desta meta, sugira o aporte mensal ideal, os produtos mais adequados para guardá-la (liquidez x rentabilidade), e o que fazer nos próximos 30 dias. Máximo 3 parágrafos.`,
+      `Meta: "${m.nome}". Valor alvo: R$ ${Math.round(m.valor).toLocaleString('pt-BR')}. Acumulado: R$ ${Math.round(m.atual).toLocaleString('pt-BR')} (${pct}%). Prazo: ${meses > 0 ? meses + ' meses' : 'vencido'}. Aporte mensal atual: R$ ${Math.round(m.aporte || 0).toLocaleString('pt-BR')}. Cenário atual: Selic ${(RealTime.macro.selic||14.50).toFixed(2)}%, CDI ${(RealTime.macro.cdi||14.40).toFixed(2)}%, IPCA ${(RealTime.macro.ipca||5.53).toFixed(2)}%. Analise a viabilidade desta meta, sugira o aporte mensal ideal, os produtos mais adequados para guardá-la (liquidez x rentabilidade), e o que fazer nos próximos 30 dias. Máximo 3 parágrafos.`,
       'Planejador financeiro pessoal. Português claro e objetivo.',
       700
     );

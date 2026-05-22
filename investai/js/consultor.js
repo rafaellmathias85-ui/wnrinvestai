@@ -96,6 +96,9 @@ function renderConsultor() {
         </div>
 
         <div>
+          <div style="background:var(--amber-dim);border:1px solid rgba(192,122,43,.3);border-radius:var(--radius-md);padding:8px 12px;font-size:11px;color:var(--amber);margin-bottom:10px;line-height:1.6">
+            ⚠ O plano gerado é educacional e <strong>não constitui recomendação de investimento</strong>. Consulte um assessor financeiro certificado (CFP/CPA-20) antes de investir.
+          </div>
           <div class="ia-ai-box">
             <div class="ia-ai-hd">
               <span class="ia-pulse"></span>

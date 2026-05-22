@@ -9,8 +9,14 @@
 //  OPORTUNIDADES
 // ═══════════════════════════════════════════════════════
 
-// Portfolio summary stored at module level — avoids embedding user data in onclick attributes
 let _oResumo = '';
+let _simBaseDolar = 5.70;  // atualizado em renderSimulador() com dados reais
+
+// Helper: retorna string resumida dos indicadores macro atuais
+function _macroStr() {
+  const m = RealTime.macro;
+  return `Selic ${m.selic.toFixed(2)}% a.a., CDI ${m.cdi.toFixed(2)}%, IPCA ${m.ipca.toFixed(2)}%, Dólar R$${m.dolar.toFixed(2)}, Ibov ${Math.round(m.ibov).toLocaleString('pt-BR')} pts`;
+}
 
 function renderOport() {
   _oResumo = App.filtered().map(i => `${i.tipo} ${i.nome} ${fmtR(i.saldo)} ${i.rendimento}%`).join('; ') || 'portfólio vazio';
@@ -19,8 +25,12 @@ function renderOport() {
     <div class="ia-sec-hd">
       <div>
         <div class="ia-sec-title">Oportunidades identificadas</div>
-        <div class="ia-sec-sub">Baseado no portfólio e cenário maio 2026</div>
+        <div class="ia-sec-sub">Baseado no portfólio e indicadores em tempo real</div>
       </div>
+    </div>
+
+    <div style="background:var(--amber-dim);border:1px solid rgba(192,122,43,.3);border-radius:var(--radius-md);padding:8px 12px;font-size:11px;color:var(--amber);margin-bottom:12px;line-height:1.6">
+      ⚠ As análises da IA são informativas e <strong>não constituem recomendação de investimento</strong>. Consulte um assessor financeiro certificado (CFP/CPA-20) antes de decidir.
     </div>
 
     <div class="ia-ai-box">
@@ -52,12 +62,13 @@ async function oportunidadeIA(tipo) {
   const bd = document.getElementById('oport-bd');
   bd.innerHTML = dots();
 
+  const macro = _macroStr();
   const prompts = {
-    geral:   `Portfólio: ${_oResumo}. Selic 14,50%, IPCA 5,53%, dólar R$5,70. 3 oportunidades principais agora.`,
-    momento: `Portfólio: ${_oResumo}. Timing ideal para próximo aporte. Produto específico e justificativa.`,
-    diversif:`Portfólio: ${_oResumo}. Classes ausentes. 2-3 produtos com percentual de alocação.`,
-    saida:   `Portfólio: ${_oResumo}. Ativos com risco de desvalorização nos próximos 6 meses.`,
-    hedge:   `Portfólio: ${_oResumo}. Estratégias de proteção cambial, inflacionária e de mercado.`,
+    geral:   `Portfólio: ${_oResumo}. Cenário atual: ${macro}. 3 oportunidades principais agora.`,
+    momento: `Portfólio: ${_oResumo}. Cenário: ${macro}. Timing ideal para próximo aporte. Produto específico e justificativa.`,
+    diversif:`Portfólio: ${_oResumo}. Cenário: ${macro}. Classes ausentes. 2-3 produtos com percentual de alocação.`,
+    saida:   `Portfólio: ${_oResumo}. Cenário: ${macro}. Ativos com risco de desvalorização nos próximos 6 meses.`,
+    hedge:   `Portfólio: ${_oResumo}. Cenário: ${macro}. Estratégias de proteção cambial, inflacionária e de mercado.`,
   };
 
   try {
@@ -77,7 +88,7 @@ async function oportunidadeCustom() {
   chat.innerHTML = dots();
 
   try {
-    const r = await API.ask(msg, `Consultor financeiro. Portfólio: ${_oResumo}. Selic 14,50%. Português, máximo 4 parágrafos.`);
+    const r = await API.ask(msg, `Consultor financeiro. Portfólio: ${_oResumo}. ${_macroStr()}. Português, máximo 4 parágrafos.`);
     chat.innerHTML = fmt(r);
   } catch { chat.innerHTML = 'Erro de conexão.'; }
 
@@ -120,6 +131,9 @@ function renderCalendario() {
 
   h += `
     </div>
+    <div style="background:var(--amber-dim);border:1px solid rgba(192,122,43,.3);border-radius:var(--radius-md);padding:8px 12px;font-size:11px;color:var(--amber);margin-bottom:12px;line-height:1.6">
+      ⚠ As orientações da IA são informativas e <strong>não constituem recomendação de investimento</strong>. Consulte um assessor financeiro certificado (CFP/CPA-20) antes de decidir.
+    </div>
     <div class="ia-ai-box">
       <div class="ia-ai-hd"><span class="ia-pulse"></span><span class="ia-ai-label">Como se posicionar antes de cada evento</span></div>
       <div class="ia-ai-bd" id="cal-bd">Selecione um evento.</div>
@@ -141,11 +155,12 @@ async function calIA(tipo) {
 
   const port = App.filtered().map(i => `${i.tipo} ${i.nome}`).join(', ') || 'vazio';
 
+  const macro = _macroStr();
   const prompts = {
-    copom:      `Copom 20 mai 2026, Selic 14,50%. Portfólio: ${port}. O que fazer antes? Prático.`,
-    ipca:       `IPCA maio sai 9 jun 2026, projeção 0,38%. Portfólio: ${port}. Impacto e ação.`,
-    fomc:       `FOMC 17 jun 2026. Portfólio: ${port}. Impacto em dólar, BTC e ações. O que proteger.`,
-    resultados: `Resultados 2T26 julho. Portfólio: ${port}. Setores com potencial de surpresa.`,
+    copom:      `Próxima reunião Copom. ${macro}. Portfólio: ${port}. O que fazer antes? Prático.`,
+    ipca:       `Próxima divulgação IPCA. ${macro}. Portfólio: ${port}. Impacto esperado e ação recomendada.`,
+    fomc:       `Próxima reunião FOMC (Fed EUA). ${macro}. Portfólio: ${port}. Impacto em dólar, BTC e ações. O que proteger.`,
+    resultados: `Temporada de resultados corporativos. ${macro}. Portfólio: ${port}. Setores com potencial de surpresa.`,
   };
 
   try {
@@ -162,6 +177,9 @@ async function calIA(tipo) {
 function renderSimulador() {
   if (typeof planGate === 'function' && planGate('simulador', 'panel-simulador', 'pro')) return;
   const base = App.filtered().reduce((s, i) => s + i.saldo, 0) || 100000;
+  _simBaseDolar = RealTime.macro.dolar || 5.70;
+  const baseSelic = (RealTime.macro.selic || 14.50).toFixed(2);
+  const baseDolStr = _simBaseDolar.toFixed(2).replace('.', ',');
 
   document.getElementById('panel-simulador').innerHTML = `
     <div class="ia-sec-hd">
@@ -171,9 +189,13 @@ function renderSimulador() {
       </div>
     </div>
 
+    <div style="background:var(--amber-dim);border:1px solid rgba(192,122,43,.3);border-radius:var(--radius-md);padding:8px 12px;font-size:11px;color:var(--amber);margin-bottom:12px;line-height:1.6">
+      ⚠ Simulações são estimativas educacionais e <strong>não constituem recomendação de investimento</strong>. Consulte um assessor financeiro certificado (CFP/CPA-20) antes de decidir.
+    </div>
+
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:14px 16px;margin-bottom:16px;font-size:12px;color:var(--text-secondary);line-height:1.8">
       <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gold);margin-bottom:8px">Como funciona</div>
-      <p>Os sliders representam <strong style="color:var(--text-primary)">variações em relação ao nível atual</strong> de cada indicador (Selic base: 14,50%). O impacto estimado é calculado pela sensibilidade típica de cada classe:</p>
+      <p>Os sliders representam <strong style="color:var(--text-primary)">variações em relação ao nível atual</strong> de cada indicador (Selic base: ${baseSelic}% · Dólar base: R$${baseDolStr}). O impacto estimado é calculado pela sensibilidade típica de cada classe:</p>
       <ul style="margin:8px 0 0 16px;list-style:disc">
         <li><strong style="color:var(--text-primary)">Variação Selic:</strong> alta pressiona preço de títulos pré-fixados e FIIs; CDI/pós-fixados ganham.</li>
         <li><strong style="color:var(--text-primary)">Dólar:</strong> impacta Ouro e ativos dolarizados — dólar mais alto valoriza essas posições.</li>
@@ -185,7 +207,7 @@ function renderSimulador() {
 
     <div class="ia-sim-block">
       <div class="ia-sim-row"><span class="ia-sim-label">Variação Selic</span><input type="range" id="s-selic" min="-3" max="3" step="0.25" value="0" oninput="simUpdate()"><span class="ia-sim-val" id="sv-selic">0%</span></div>
-      <div class="ia-sim-row"><span class="ia-sim-label">Dólar (R$)</span><input type="range" id="s-dolar" min="4.5" max="7.5" step="0.1" value="5.70" oninput="simUpdate()"><span class="ia-sim-val" id="sv-dolar">R$ 5,70</span></div>
+      <div class="ia-sim-row"><span class="ia-sim-label">Dólar (R$)</span><input type="range" id="s-dolar" min="4.5" max="7.5" step="0.1" value="${_simBaseDolar.toFixed(1)}" oninput="simUpdate()"><span class="ia-sim-val" id="sv-dolar">R$ ${baseDolStr}</span></div>
       <div class="ia-sim-row"><span class="ia-sim-label">Bitcoin</span><input type="range" id="s-btc" min="-60" max="100" step="5" value="0" oninput="simUpdate()"><span class="ia-sim-val" id="sv-btc">0%</span></div>
       <div class="ia-sim-row"><span class="ia-sim-label">Ibovespa</span><input type="range" id="s-ibov" min="-40" max="40" step="2" value="0" oninput="simUpdate()"><span class="ia-sim-val" id="sv-ibov">0%</span></div>
     </div>
@@ -226,7 +248,7 @@ function simUpdate() {
     if (['CDB', 'Tesouro Direto', 'LCI/LCA'].includes(i.tipo)) imp += i.saldo * (sel * -0.02);
     if (i.tipo === 'Ações')  imp += i.saldo * (ibov / 100 * 0.8);
     if (i.tipo === 'Cripto') imp += i.saldo * (btc  / 100 * 0.9);
-    if (i.tipo === 'Ouro')   imp += i.saldo * ((dol - 5.70) / 5.70 * 0.6);
+    if (i.tipo === 'Ouro')   imp += i.saldo * ((dol - _simBaseDolar) / _simBaseDolar * 0.6);
     if (i.tipo === 'FII')    imp += i.saldo * (sel * -0.03 + ibov / 100 * 0.3);
   });
 
@@ -256,9 +278,10 @@ async function simIA() {
   const ibov = document.getElementById('s-ibov').value;
   const port = App.filtered().map(i => `${i.tipo} ${i.nome} ${fmtR(i.saldo)}`).join(', ') || 'vazio';
 
+  const m = RealTime.macro;
   try {
     const res = await API.ask(
-      `Base: Selic 14,50%, dólar R$5,70. Cenário simulado: Selic ${parseFloat(sel) >= 0 ? '+' : ''}${sel}%, dólar R$${parseFloat(dol).toFixed(2)}, Bitcoin ${parseFloat(btc) >= 0 ? '+' : ''}${btc}%, Ibovespa ${parseFloat(ibov) >= 0 ? '+' : ''}${ibov}%. Portfólio: ${port}. Impacto real e o que fazer preventivamente. Máximo 4 parágrafos.`,
+      `Base atual: Selic ${m.selic.toFixed(2)}%, dólar R$${m.dolar.toFixed(2)}, Ibov ${Math.round(m.ibov).toLocaleString('pt-BR')} pts. Cenário simulado: Selic ${parseFloat(sel) >= 0 ? '+' : ''}${sel}%, dólar R$${parseFloat(dol).toFixed(2)}, Bitcoin ${parseFloat(btc) >= 0 ? '+' : ''}${btc}%, Ibovespa ${parseFloat(ibov) >= 0 ? '+' : ''}${ibov}%. Portfólio: ${port}. Impacto real e o que fazer preventivamente. Máximo 4 parágrafos.`,
       'Gestor de risco. Prático. Português.'
     );
     bd.innerHTML = fmt(res);
@@ -377,7 +400,7 @@ async function avaliarDecisao(i) {
   const d = App.diary[i];
   try {
     const r = await API.ask(
-      `Avalie: ${d.tipo} em ${d.ativo}, valor ${fmtR(d.valor)}, data ${d.data}. Justificativa: "${d.justificativa}". Cenário: Selic 14,50%, IPCA 5,53%. Boa decisão? O que faria diferente? Máximo 3 frases.`,
+      `Avalie: ${d.tipo} em ${d.ativo}, valor ${fmtR(d.valor)}, data ${d.data}. Justificativa: "${d.justificativa}". Cenário na época e atual: ${_macroStr()}. Boa decisão? O que faria diferente? Máximo 3 frases.`,
       'Gestor de portfólio. Honesto, construtivo. Português. Conciso.'
     );
     App.diary[i].avaliacao = r.replace(/\*\*(.*?)\*\*/g, '$1');

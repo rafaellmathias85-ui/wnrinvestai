@@ -70,6 +70,8 @@ jobs:
           # ── Instalar dependências do backend ──────────────────────
           cd /var/www/InvestAI/api
           npm install --production
+          # Auditoria de segurança — loga CVEs críticos sem bloquear o deploy
+          npm audit --audit-level=high --production 2>&1 | head -30 || true
 
           # ── Reiniciar API com PM2 ─────────────────────────────────
           if pm2 describe investai-api > /dev/null 2>&1; then

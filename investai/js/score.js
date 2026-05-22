@@ -115,7 +115,10 @@ function renderScore() {
   }
 
   h += `
-    <div class="ia-ai-box" style="margin-top:16px">
+    <div style="background:var(--amber-dim);border:1px solid rgba(192,122,43,.3);border-radius:var(--radius-md);padding:8px 12px;font-size:11px;color:var(--amber);margin-top:16px;margin-bottom:8px;line-height:1.6">
+      ⚠ As análises da IA são informativas e <strong>não constituem recomendação de investimento</strong>. Consulte um assessor financeiro certificado (CFP/CPA-20) antes de decidir.
+    </div>
+    <div class="ia-ai-box">
       <div class="ia-ai-hd"><span class="ia-pulse"></span><span class="ia-ai-label">IA — Alertas e recomendações</span></div>
       <div class="ia-ai-bd" id="score-bd">Selecione uma análise.</div>
     </div>

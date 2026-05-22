@@ -8,6 +8,12 @@ const db = require('./db');
 
 const app = express();
 
+// ── Logging estruturado ───────────────────────────────────────
+const log = (level, msg, data = {}) => {
+  const entry = { ts: new Date().toISOString(), level, msg, ...data };
+  (level === 'error' ? console.error : console.log)(JSON.stringify(entry));
+};
+
 // ── Segurança: headers HTTP ───────────────────────────────────
 app.use(helmet({
   hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
@@ -58,6 +64,11 @@ const PLANS = {
   premium: { label: 'InvestAI Premium', monthly: 59.00, annual: 564.00 },
 };
 
+// ── GET /api/health ───────────────────────────────────────────
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', ts: new Date().toISOString(), uptime: Math.round(process.uptime()) });
+});
+
 // ── GET /api/plan ─────────────────────────────────────────────
 app.get('/api/plan', (req, res) => {
   const email = (req.query.email || '').toLowerCase().trim();
@@ -106,7 +117,7 @@ app.post('/api/checkout', checkoutLimiter, async (req, res) => {
     });
     res.json({ url: result.init_point });
   } catch (e) {
-    console.error('Checkout error:', e.message);
+    log('error', 'checkout_error', { msg: e.message });
     res.status(500).json({ error: 'Erro ao criar checkout. Tente novamente.' });
   }
 });
@@ -123,11 +134,11 @@ app.post('/api/webhook', async (req, res) => {
       const { email, plan, days } = p.metadata || {};
       if (email && VALID_PLANS.has(plan) && Number(days) > 0) {
         db.setPlan(email.toLowerCase(), plan, Number(days));
-        console.log(`[webhook] Plano ${plan} ativado para ${email}`);
+        log('info', 'plan_activated', { email, plan });
       }
     }
   } catch (e) {
-    console.error('Webhook error:', e.message);
+    log('error', 'webhook_error', { msg: e.message });
   }
 });
 
@@ -165,7 +176,7 @@ app.post('/api/ai', aiLimiter, async (req, res) => {
     const data = await r.json();
     res.json({ text: data.content?.[0]?.text || '' });
   } catch (e) {
-    console.error('AI proxy error:', e.message);
+    log('error', 'ai_proxy_error', { msg: e.message });
     res.status(500).json({ error: 'Erro ao conectar com a IA. Tente novamente.' });
   }
 });
@@ -230,9 +241,9 @@ app.use((req, res) => res.status(404).json({ error: 'Rota não encontrada.' }));
 
 // ── Error handler global ──────────────────────────────────────
 app.use((err, req, res, _next) => {
-  console.error('Unhandled error:', err.message);
+  log('error', 'unhandled_error', { msg: err.message, path: req.path });
   res.status(500).json({ error: 'Erro interno. Tente novamente.' });
 });
 
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, '127.0.0.1', () => console.log(`InvestAI API rodando na porta ${PORT}`));
+app.listen(PORT, '127.0.0.1', () => log('info', 'server_started', { port: PORT }));
