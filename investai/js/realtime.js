@@ -40,12 +40,24 @@ const RealTime = {
     return result;
   },
 
-  // ── Ações / FIIs BR — Brapi com fallback Yahoo Finance ──
+  // ── Ações / FIIs BR — Backend proxy → Brapi direto → Yahoo Finance ──
   async fetchStocks(tickers) {
     const key = 'stocks_' + tickers.join('_');
     if (this._cached(key)) return this._cache[key].data;
 
-    // Tentativa 1: Brapi
+    // Tentativa 1: Backend proxy /api/b3quote (sem CORS, cache server-side)
+    try {
+      const res = await fetch(`/api/b3quote?tickers=${tickers.join(',')}`);
+      if (res.ok) {
+        const raw = await res.json();
+        if (Object.keys(raw).length) {
+          this._cache[key] = { data: raw, ts: Date.now() };
+          return raw;
+        }
+      }
+    } catch (_) {}
+
+    // Tentativa 2: Brapi direto (fallback quando sem backend)
     try {
       const url = `https://brapi.dev/api/quote/${tickers.join(',')}?fundamental=false`;
       const res  = await fetch(url);
@@ -71,7 +83,7 @@ const RealTime = {
       return result;
     } catch (_) {}
 
-    // Tentativa 2: Yahoo Finance (.SA)
+    // Tentativa 3: Yahoo Finance (.SA)
     const settled = await Promise.allSettled(tickers.map(t => this._yahooB3Quote(t)));
     const result  = {};
     settled.forEach((r, i) => {

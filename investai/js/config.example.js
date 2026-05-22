@@ -10,6 +10,8 @@
 
 const CONFIG = {
   // Obtenha sua chave em https://console.anthropic.com
+  // Em produção (VPS): configure ANTHROPIC_API_KEY no api/.env — a chave não
+  // precisa estar aqui. Em desenvolvimento local (sem backend), preencha abaixo.
   ANTHROPIC_API_KEY: 'SUA_CHAVE_ANTHROPIC_AQUI',
 
   // Google OAuth — não utilizado (removido)
