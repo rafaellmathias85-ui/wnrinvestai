@@ -168,6 +168,21 @@ async function gerarPlano() {
   const vlrIni = inicial    ? `R$ ${fmtBRLint(inicial)}`    : 'não informado';
   const vlrMes = recorrente ? `R$ ${fmtBRLint(recorrente)}` : 'não informado';
 
+  // Obtém indicadores macro em tempo real (usa cache de 1h se disponível)
+  let macro = RealTime.macro;
+  try { macro = await RealTime.fetchMacro(); } catch (_) {}
+
+  const fmtPct = v => Number(v).toFixed(2).replace('.', ',') + '%';
+  const cenario = [
+    `Selic: ${fmtPct(macro.selic)} a.a.`,
+    `CDI: ${fmtPct(macro.cdi)} a.a.`,
+    `IPCA 12m: ${fmtPct(macro.ipca)} a.a.`,
+    `Dólar: R$ ${Number(macro.dolar).toFixed(2).replace('.', ',')}`,
+    `Ibovespa: ${Math.round(macro.ibov).toLocaleString('pt-BR')} pts`,
+    `Bitcoin: US$ ${Math.round(macro.btc).toLocaleString('en-US')}`,
+    `VIX: ${Number(macro.vix).toFixed(1)}`,
+  ].join(' | ');
+
   const prompt = `
 Você é um consultor financeiro sênior especialista no mercado brasileiro.
 Crie um plano de investimento personalizado com base nos dados abaixo.
@@ -180,9 +195,8 @@ DADOS DO INVESTIDOR:
 - Aporte mensal: ${vlrMes}
 - Perfil de risco: ${perfil}
 
-CENÁRIO ECONÔMICO (maio 2026):
-- Selic: 14,50% a.a. | IPCA: 5,53% a.a. | Dólar: R$ 5,70
-- Ibovespa com volatilidade moderada; juros altos favorecem renda fixa
+CENÁRIO ECONÔMICO ATUAL:
+- ${cenario}
 
 INSTRUÇÕES — responda SOMENTE com JSON válido, sem markdown nem texto fora do JSON:
 {

@@ -19,6 +19,35 @@ jobs:
           ls -t /var/www/InvestAI/backups/backup-*.tar.gz 2>/dev/null | tail -n +6 | xargs -r rm --
           echo "Backup criado em /var/www/InvestAI/backups/"
 
+      - name: Configurar variáveis de ambiente
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          MP_ACCESS_TOKEN: ${{ secrets.MP_ACCESS_TOKEN }}
+        run: |
+          ENV_FILE="/var/www/InvestAI/api/.env"
+          # Garante que o arquivo existe
+          touch "$ENV_FILE"
+          chmod 600 "$ENV_FILE"
+
+          # Função para upsert de variável no .env
+          upsert_env() {
+            local key="$1" val="$2"
+            if [ -z "$val" ]; then return; fi
+            if grep -q "^${key}=" "$ENV_FILE" 2>/dev/null; then
+              sed -i "s|^${key}=.*|${key}=${val}|" "$ENV_FILE"
+            else
+              echo "${key}=${val}" >> "$ENV_FILE"
+            fi
+          }
+
+          upsert_env "ANTHROPIC_API_KEY" "$ANTHROPIC_API_KEY"
+          upsert_env "MP_ACCESS_TOKEN"   "$MP_ACCESS_TOKEN"
+
+          # Garante PORT padrão se ausente
+          grep -q "^PORT=" "$ENV_FILE" || echo "PORT=3001" >> "$ENV_FILE"
+
+          echo ".env atualizado"
+
       - name: Deploy InvestAI on VPS
         run: |
           cd /var/www/InvestAI
