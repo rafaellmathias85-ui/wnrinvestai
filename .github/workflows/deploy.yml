@@ -10,13 +10,14 @@ jobs:
 
     steps:
       - name: Backup estado atual do InvestAI
+        continue-on-error: true
         run: |
-          mkdir -p /var/backups/investai
-          tar -czf /var/backups/investai/backup-$(date +%Y%m%d-%H%M%S).tar.gz \
+          mkdir -p /var/www/InvestAI/backups
+          tar -czf /var/www/InvestAI/backups/backup-$(date +%Y%m%d-%H%M%S).tar.gz \
               -C /var/www/InvestAI investai/
           # Mantém apenas os 5 backups mais recentes
-          ls -t /var/backups/investai/backup-*.tar.gz 2>/dev/null | tail -n +6 | xargs -r rm --
-          echo "Backup criado em /var/backups/investai/"
+          ls -t /var/www/InvestAI/backups/backup-*.tar.gz 2>/dev/null | tail -n +6 | xargs -r rm --
+          echo "Backup criado em /var/www/InvestAI/backups/"
 
       - name: Deploy InvestAI on VPS
         run: |
