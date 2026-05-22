@@ -1,4 +1,5 @@
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 const express   = require('express');
 const cors      = require('cors');
 const helmet    = require('helmet');
@@ -23,7 +24,12 @@ app.use(helmet({
 
 // ── CORS restrito às origens autorizadas ──────────────────────
 app.use(cors({
-  origin: ['https://wnrtecnologia.com.br', 'http://localhost:8080'],
+  origin: [
+    'https://wnrtecnologia.com.br',
+    'http://localhost:3001',
+    'http://localhost:8080',
+    'http://127.0.0.1:3001',
+  ],
   methods: ['GET', 'POST'],
   allowedHeaders: ['Content-Type'],
 }));
@@ -235,6 +241,16 @@ app.get('/api/b3quote', async (req, res) => {
 
   res.json(result);
 });
+
+// ── Frontend estático (dev local e fallback) ──────────────────
+// Em produção o nginx serve os estáticos antes de chegar aqui.
+// Em localhost, o servidor Node serve diretamente.
+const FRONTEND = path.join(__dirname, '..', 'investai');
+app.get('/',               (_req, res) => res.redirect('/investai'));
+app.get('/investai',       (_req, res) => res.sendFile(path.join(FRONTEND, 'landing.html')));
+app.get('/investai/app',   (_req, res) => res.sendFile(path.join(FRONTEND, 'index.html')));
+app.get('/investai/login', (_req, res) => res.sendFile(path.join(FRONTEND, 'login.html')));
+app.use('/investai',       express.static(FRONTEND));
 
 // ── 404 catch-all ─────────────────────────────────────────────
 app.use((req, res) => res.status(404).json({ error: 'Rota não encontrada.' }));
