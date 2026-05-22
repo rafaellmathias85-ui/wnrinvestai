@@ -1,143 +1,185 @@
 /**
- * auth.js — Sistema de autenticação multi-usuário (localStorage)
+ * auth.js — Autenticação híbrida: credenciais no backend, cache em localStorage.
  *
- * Planos: free | pro | premium
- * Para ativar um plano manualmente (demo/testes):
- *   Auth.setPlan('pro')  ou  Auth.setPlan('premium')
+ * Métodos síncronos (getSession, isLogged, can, getPlan, prefix) leem do cache.
+ * Métodos de mutação (register, login, logout) chamam o backend.
  */
 const Auth = {
-  USERS_KEY:   'investai_users_v1',
   SESSION_KEY: 'investai_session_v1',
+  USERS_KEY:   'investai_users_v1',
 
   // Limites por plano
   PLANS: {
-    free:    { label: 'Gratuito', portfolioLimit: 3, alertas: false, consultor: false, painel: false, oport: false, simulador: false, diario: false, metas: false },
-    pro:     { label: 'Pro',      portfolioLimit: Infinity, alertas: true, consultor: false, painel: false, oport: true, simulador: true, diario: true, metas: true },
-    premium: { label: 'Premium',  portfolioLimit: Infinity, alertas: true, consultor: true, painel: true, oport: true, simulador: true, diario: true, metas: true },
+    free:    { label: 'Gratuito', portfolioLimit: 3,        alertas: false, consultor: false, painel: false, oport: false, simulador: false, diario: false, metas: false },
+    pro:     { label: 'Pro',      portfolioLimit: Infinity,  alertas: true,  consultor: false, painel: false, oport: true,  simulador: true,  diario: true,  metas: true  },
+    premium: { label: 'Premium',  portfolioLimit: Infinity,  alertas: true,  consultor: true,  painel: true,  oport: true,  simulador: true,  diario: true,  metas: true  },
   },
 
-  // ── Validação ─────────────────────────────────────────────
+  ADMINS: ['rafaellmathias85@gmail.com'],
+
+  // ── Validações locais ─────────────────────────────────────
   _EMAIL_RE: /^[^\s@]{1,64}@[^\s@]{1,255}\.[^\s@]{2,}$/,
+  _validateEmail(email)    { if (!email || !this._EMAIL_RE.test(email)) throw new Error('Formato de e-mail inválido.'); },
+  _validatePassword(pass)  { if (!pass || pass.length < 6) throw new Error('Senha deve ter no mínimo 6 caracteres.'); if (pass.length > 128) throw new Error('Senha muito longa.'); },
 
-  _validateEmail(email) {
-    if (!email || !this._EMAIL_RE.test(email))
-      throw new Error('Formato de e-mail inválido.');
-  },
-
-  _validatePassword(pass) {
-    if (!pass || pass.length < 6)
-      throw new Error('Senha deve ter no mínimo 6 caracteres.');
-    if (pass.length > 128)
-      throw new Error('Senha muito longa.');
-  },
-
-  // ── Proteção contra brute-force ───────────────────────────
-  _loginAttempts: {},   // { email: { count, ts } }
-  _LOCKOUT_MAX:   5,
-  _LOCKOUT_MS:    15 * 60 * 1000,  // 15 minutos
-
-  _checkLockout(email) {
-    const a = this._loginAttempts[email];
-    if (!a || a.count < this._LOCKOUT_MAX) return;
-    const remaining = this._LOCKOUT_MS - (Date.now() - a.ts);
-    if (remaining > 0) {
-      const mins = Math.ceil(remaining / 60000);
-      throw new Error(`Conta bloqueada temporariamente. Tente em ${mins} minuto(s).`);
-    }
-    delete this._loginAttempts[email];
-  },
-
-  _recordFail(email) {
-    if (!this._loginAttempts[email]) this._loginAttempts[email] = { count: 0, ts: 0 };
-    this._loginAttempts[email].count++;
-    this._loginAttempts[email].ts = Date.now();
-  },
-
-  _clearFail(email) { delete this._loginAttempts[email]; },
-
-  // ── Hash simples (client-side; não substitui bcrypt no backend) ──
+  // ── Hash fraco (somente para migração de contas localStorage antigas) ──
   _hash(str) {
     let h = 5381;
     for (let i = 0; i < str.length; i++) h = ((h << 5) + h) ^ str.charCodeAt(i);
     return (h >>> 0).toString(36);
   },
 
-  _users() {
-    try { return JSON.parse(localStorage.getItem(this.USERS_KEY)) || {}; }
-    catch { return {}; }
+  // ── Lockout local (UX — brute force bloqueado também no backend) ───────
+  _loginAttempts: {},
+  _LOCKOUT_MAX: 5,
+  _LOCKOUT_MS:  15 * 60 * 1000,
+
+  _checkLockout(email) {
+    const a = this._loginAttempts[email];
+    if (!a || a.count < this._LOCKOUT_MAX) return;
+    const remaining = this._LOCKOUT_MS - (Date.now() - a.ts);
+    if (remaining > 0) throw new Error(`Muitas tentativas. Tente em ${Math.ceil(remaining / 60000)} minuto(s).`);
+    delete this._loginAttempts[email];
+  },
+  _recordFail(email) {
+    if (!this._loginAttempts[email]) this._loginAttempts[email] = { count: 0, ts: 0 };
+    this._loginAttempts[email].count++;
+    this._loginAttempts[email].ts = Date.now();
+  },
+  _clearFail(email) { delete this._loginAttempts[email]; },
+
+  // ── Chamada ao backend ────────────────────────────────────
+  async _api(method, path, body) {
+    const session = this.getSession();
+    const headers = { 'Content-Type': 'application/json' };
+    if (session?.token) headers['Authorization'] = `Bearer ${session.token}`;
+
+    const res = await fetch(`/api/auth${path}`, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    return data;
   },
 
-  _saveUsers(u) { localStorage.setItem(this.USERS_KEY, JSON.stringify(u)); },
-
-  register(name, email, password) {
-    const key = email.toLowerCase().trim();
-    this._validateEmail(key);
-    this._validatePassword(password);
-    if (!name || name.trim().length < 2) throw new Error('Nome deve ter ao menos 2 caracteres.');
-
+  // ── Cache local após login/register ──────────────────────
+  _cacheSession(data) {
+    // Salva sessão com token para chamadas autenticadas
+    localStorage.setItem(this.SESSION_KEY, JSON.stringify({
+      id:     data.user.email,
+      name:   data.user.name,
+      email:  data.user.email,
+      avatar: data.user.avatar || null,
+      token:  data.token,
+      exp:    data.expiresAt,
+    }));
+    // Salva perfil do usuário para métodos síncronos (currentUser, can, etc.)
     const users = this._users();
-    if (users[key]) throw new Error('Este e-mail já está cadastrado.');
-
-    const user = {
-      id: 'u' + Date.now(), name: name.trim(), email: key,
-      ph: this._hash(password), googleId: null,
-      avatar: null, profile: null,
-      plan: 'free', planExp: null,
-      createdAt: new Date().toISOString(),
+    users[data.user.email] = {
+      id:      data.user.email,
+      name:    data.user.name,
+      email:   data.user.email,
+      avatar:  data.user.avatar || null,
+      plan:    data.user.plan    || 'free',
+      planExp: data.user.planExp || null,
+      profile: data.user.profile || null,
+      ph:      null,  // senha não volta ao client
     };
-    users[key] = user;
-    this._saveUsers(users);
-    this._session(user);
-    return user;
+    localStorage.setItem(this.USERS_KEY, JSON.stringify(users));
   },
 
-  login(email, password) {
+  // ── Registro ──────────────────────────────────────────────
+  async register(name, email, password) {
+    if (!name || name.trim().length < 2) throw new Error('Nome deve ter ao menos 2 caracteres.');
+    this._validateEmail(email.toLowerCase().trim());
+    this._validatePassword(password);
+
+    const data = await this._api('POST', '/register', { name: name.trim(), email: email.toLowerCase().trim(), password });
+    this._cacheSession(data);
+    return data.user;
+  },
+
+  // ── Login ─────────────────────────────────────────────────
+  async login(email, password) {
     const key = email.toLowerCase().trim();
     this._validateEmail(key);
     this._checkLockout(key);
 
-    const users = this._users();
-    const u     = users[key];
-    if (!u) { this._recordFail(key); throw new Error('E-mail não encontrado.'); }
-    if (!u.ph) throw new Error('Conta Google — use o botão "Entrar com Google".');
-    if (u.ph !== this._hash(password)) {
-      this._recordFail(key);
-      throw new Error('Senha incorreta.');
+    let data;
+    try {
+      data = await this._api('POST', '/login', { email: key, password });
+    } catch (e) {
+      // Migração automática: conta existe só no localStorage (criada antes do backend)
+      if (e.message === 'E-mail não encontrado.') {
+        const localUser = this._users()[key];
+        if (localUser && localUser.ph && localUser.ph === this._hash(password)) {
+          // Senha local bate — auto-registra no backend
+          try {
+            data = await this._api('POST', '/register', { name: localUser.name, email: key, password });
+          } catch (_) {
+            // Se o registro falhou (email já existe de outra forma), deixa cair no erro original
+            this._recordFail(key);
+            throw e;
+          }
+        } else {
+          this._recordFail(key);
+          throw e;
+        }
+      } else {
+        if (e.message === 'Senha incorreta.') this._recordFail(key);
+        throw e;
+      }
     }
 
     this._clearFail(key);
-    this._session(u);
-    return u;
+    this._cacheSession(data);
+    return data.user;
   },
 
-  loginGoogle(profile) {
-    const users = this._users();
-    const key   = profile.email.toLowerCase();
-    if (!users[key]) {
-      users[key] = {
-        id: 'g' + Date.now(), name: profile.name,
-        email: key, ph: null,
-        googleId: profile.sub, avatar: profile.picture,
-        profile: null, plan: 'free', planExp: null,
-        createdAt: new Date().toISOString(),
-      };
-    } else {
-      users[key].avatar   = profile.picture;
-      users[key].googleId = profile.sub;
+  // ── Logout ────────────────────────────────────────────────
+  async logout() {
+    // Fire-and-forget para o servidor
+    this._api('POST', '/logout', {}).catch(() => {});
+    localStorage.removeItem(this.SESSION_KEY);
+  },
+
+  // ── Validação de sessão no servidor (App.init) ────────────
+  async validateSession() {
+    const s = this.getSession();
+    if (!s) return false;
+    try {
+      const data = await this._api('GET', '/me');
+      // Atualiza cache com dados frescos do servidor
+      const users = this._users();
+      if (users[s.email]) {
+        users[s.email].plan    = data.plan    || 'free';
+        users[s.email].planExp = data.planExp || null;
+        users[s.email].profile = data.profile || null;
+      }
+      localStorage.setItem(this.USERS_KEY, JSON.stringify(users));
+      return true;
+    } catch (_) {
+      // Sessão inválida no servidor — limpa local
+      localStorage.removeItem(this.SESSION_KEY);
+      return false;
     }
-    this._saveUsers(users);
-    this._session(users[key]);
-    return users[key];
   },
 
-  _session(user) {
-    localStorage.setItem(this.SESSION_KEY, JSON.stringify({
-      id: user.id, name: user.name, email: user.email,
-      avatar: user.avatar || null,
-      exp: Date.now() + 7 * 86400000,
-    }));
+  // ── Reset de senha ────────────────────────────────────────
+  async requestPasswordReset(email) {
+    const key = email.toLowerCase().trim();
+    this._validateEmail(key);
+    return this._api('POST', '/reset-request', { email: key });
   },
 
+  async resetPassword(token, password) {
+    this._validatePassword(password);
+    return this._api('POST', '/reset-password', { token, password });
+  },
+
+  // ── Métodos síncronos (leem do cache) ─────────────────────
   getSession() {
     try {
       const s = JSON.parse(localStorage.getItem(this.SESSION_KEY));
@@ -147,6 +189,11 @@ const Auth = {
   },
 
   isLogged()  { return !!this.getSession(); },
+
+  _users() {
+    try { return JSON.parse(localStorage.getItem(this.USERS_KEY)) || {}; }
+    catch { return {}; }
+  },
 
   currentUser() {
     const s = this.getSession();
@@ -158,24 +205,24 @@ const Auth = {
     const s = this.getSession();
     if (!s) return;
     const users = this._users();
-    if (users[s.email]) { users[s.email].profile = answers; this._saveUsers(users); }
+    if (users[s.email]) {
+      users[s.email].profile = answers;
+      localStorage.setItem(this.USERS_KEY, JSON.stringify(users));
+    }
+    // Sync para o servidor (fire-and-forget)
+    this._api('POST', '/update-profile', { profile: answers }).catch(() => {});
   },
 
-  // Emails com acesso premium permanente (administradores)
-  ADMINS: ['rafaellmathias85@gmail.com'],
-
-  // ── Planos ──────────────────────────────────────────────
+  // ── Planos ────────────────────────────────────────────────
   getPlan() {
     const u = this.currentUser();
     if (!u) return 'free';
-    if (this.ADMINS.includes(u.email.toLowerCase())) return 'premium';
+    if (this.ADMINS.includes((u.email || '').toLowerCase())) return 'premium';
     if (u.planExp && Date.now() > u.planExp) return 'free';
     return u.plan || 'free';
   },
-
   getPlanConfig() { return this.PLANS[this.getPlan()] || this.PLANS.free; },
-
-  can(feature) { return !!this.getPlanConfig()[feature]; },
+  can(feature)    { return !!this.getPlanConfig()[feature]; },
 
   setPlan(plan, days = 365) {
     const s = this.getSession();
@@ -184,10 +231,9 @@ const Auth = {
     if (!users[s.email]) return;
     users[s.email].plan    = plan;
     users[s.email].planExp = plan === 'free' ? null : Date.now() + days * 86400000;
-    this._saveUsers(users);
+    localStorage.setItem(this.USERS_KEY, JSON.stringify(users));
   },
 
-  // Sincroniza plano do backend (chamado após login)
   async syncPlan() {
     const s = this.getSession();
     if (!s || this.ADMINS.includes(s.email)) return;
@@ -200,13 +246,11 @@ const Auth = {
         if (users[s.email]) {
           users[s.email].plan    = plan;
           users[s.email].planExp = planExp || null;
-          this._saveUsers(users);
+          localStorage.setItem(this.USERS_KEY, JSON.stringify(users));
         }
       }
-    } catch (_) { /* fallback offline */ }
+    } catch (_) {}
   },
-
-  logout() { localStorage.removeItem(this.SESSION_KEY); },
 
   prefix() {
     const s = this.getSession();

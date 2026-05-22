@@ -14,6 +14,13 @@ const App = {
       return;
     }
 
+    // ── Valida sessão no servidor (invalida tokens expirados) ──
+    const sessionOk = await Auth.validateSession();
+    if (!sessionOk) {
+      window.location.href = 'login.html';
+      return;
+    }
+
     // ── Sincronizar plano com backend ──────────────────
     await Auth.syncPlan();
 
@@ -162,12 +169,11 @@ document.addEventListener('click', (e) => {
 });
 
 // ── Logout ───────────────────────────────────────────────
-function doLogout() {
-  // Parar polling de alertas se ativo
+async function doLogout() {
   if (typeof AlertasState !== 'undefined' && AlertasState.pollId) {
     clearInterval(AlertasState.pollId);
   }
-  Auth.logout();
+  await Auth.logout();
   window.location.href = 'login.html';
 }
 

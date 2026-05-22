@@ -5,7 +5,8 @@ const cors      = require('cors');
 const helmet    = require('helmet');
 const rateLimit = require('express-rate-limit');
 const { MercadoPagoConfig, Preference, Payment } = require('mercadopago');
-const db = require('./db');
+const db        = require('./db');
+const authRoutes = require('./routes/auth');
 
 const app = express();
 
@@ -31,7 +32,7 @@ app.use(cors({
     'http://127.0.0.1:3001',
   ],
   methods: ['GET', 'POST'],
-  allowedHeaders: ['Content-Type'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
 app.use(express.json({ limit: '32kb' }));
@@ -69,6 +70,12 @@ const PLANS = {
   pro:     { label: 'InvestAI Pro',     monthly: 29.00, annual: 276.00 },
   premium: { label: 'InvestAI Premium', monthly: 59.00, annual: 564.00 },
 };
+
+// ── Auth routes ───────────────────────────────────────────────
+app.use('/api/auth', authRoutes);
+
+// Limpeza periódica de sessões expiradas (a cada 6h)
+setInterval(() => db.deleteExpiredSessions(), 6 * 60 * 60 * 1000);
 
 // ── GET /api/health ───────────────────────────────────────────
 app.get('/api/health', (req, res) => {

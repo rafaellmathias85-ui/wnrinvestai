@@ -219,8 +219,41 @@
             <label>Senha</label>
             <input type="password" id="l-pass" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()" />
           </div>
-          <button class="login-btn" onclick="doLogin()">Entrar</button>
+          <button class="login-btn" id="btn-login" onclick="doLogin()">Entrar</button>
+          <div style="text-align:center;margin-top:12px">
+            <button onclick="switchTab('forgot')" style="background:none;border:none;color:var(--text-tertiary);font-size:11px;cursor:pointer;text-decoration:underline">Esqueci minha senha</button>
+          </div>
+        </div>
 
+        <!-- ESQUECI MINHA SENHA -->
+        <div id="form-forgot" style="display:none">
+          <p style="font-size:12px;color:var(--text-secondary);margin-bottom:16px;line-height:1.6">
+            Informe seu e-mail e enviaremos um link para redefinir sua senha.
+          </p>
+          <div class="login-fg">
+            <label>E-mail</label>
+            <input type="email" id="f-email" placeholder="seu@email.com" autocomplete="email" onkeydown="if(event.key==='Enter')doForgot()" />
+          </div>
+          <button class="login-btn" id="btn-forgot" onclick="doForgot()">Enviar link</button>
+          <div style="text-align:center;margin-top:12px">
+            <button onclick="switchTab('login')" style="background:none;border:none;color:var(--text-tertiary);font-size:11px;cursor:pointer;text-decoration:underline">Voltar ao login</button>
+          </div>
+        </div>
+
+        <!-- NOVA SENHA (via link de reset) -->
+        <div id="form-reset" style="display:none">
+          <p style="font-size:12px;color:var(--text-secondary);margin-bottom:16px;line-height:1.6">
+            Defina sua nova senha.
+          </p>
+          <div class="login-fg">
+            <label>Nova senha (mínimo 6 caracteres)</label>
+            <input type="password" id="rs-pass" placeholder="••••••••" autocomplete="new-password" />
+          </div>
+          <div class="login-fg">
+            <label>Confirmar nova senha</label>
+            <input type="password" id="rs-pass2" placeholder="••••••••" onkeydown="if(event.key==='Enter')doReset()" />
+          </div>
+          <button class="login-btn" id="btn-reset" onclick="doReset()">Redefinir senha</button>
         </div>
 
         <!-- CRIAR CONTA -->
@@ -246,8 +279,8 @@
       </div>
 
       <div class="login-footer">
-        Seus dados ficam armazenados localmente neste navegador.<br>
-        Nenhuma informação financeira é enviada a servidores externos.<br>
+        Seus dados de acesso são armazenados com segurança em nosso servidor.<br>
+        Informações financeiras permanecem no seu navegador (localStorage).<br>
         <span style="color:rgba(138,143,154,0.7)">O InvestAI não realiza indicações de investimento. As análises são de caráter exclusivamente informativo.</span>
       </div>
     </div>
@@ -258,8 +291,10 @@
   <script>
     // ── Tab switch ───────────────────────────────────────
     function switchTab(t) {
-      document.getElementById('form-login').style.display    = t === 'login'    ? '' : 'none';
-      document.getElementById('form-register').style.display = t === 'register' ? '' : 'none';
+      ['login','register','forgot','reset'].forEach(n => {
+        const el = document.getElementById('form-' + n);
+        if (el) el.style.display = t === n ? '' : 'none';
+      });
       document.getElementById('tab-login').classList.toggle('active',    t === 'login');
       document.getElementById('tab-register').classList.toggle('active', t === 'register');
       hideMsg();
@@ -281,32 +316,75 @@
     }
 
     // ── Login ────────────────────────────────────────────
-    function doLogin() {
+    async function doLogin() {
       const email = document.getElementById('l-email').value.trim();
       const pass  = document.getElementById('l-pass').value;
       if (!email || !pass) { showErr('Preencha e-mail e senha.'); return; }
+      const btn = document.getElementById('btn-login');
+      btn.disabled = true; btn.textContent = 'Entrando…';
       try {
-        Auth.login(email, pass);
-        showOk('Entrando…');
+        await Auth.login(email, pass);
+        showOk('Bem-vindo! Redirecionando…');
         setTimeout(() => { window.location.href = _afterLoginDest(); }, 600);
-      } catch(e) { showErr(e.message); }
+      } catch(e) {
+        showErr(e.message);
+        btn.disabled = false; btn.textContent = 'Entrar';
+      }
     }
 
     // ── Register ─────────────────────────────────────────
-    function doRegister() {
+    async function doRegister() {
       const name  = document.getElementById('r-name').value.trim();
       const email = document.getElementById('r-email').value.trim();
       const pass  = document.getElementById('r-pass').value;
       const pass2 = document.getElementById('r-pass2').value;
-      if (!name)         { showErr('Informe seu nome.'); return; }
-      if (!email)        { showErr('Informe o e-mail.'); return; }
+      if (!name)           { showErr('Informe seu nome.'); return; }
+      if (!email)          { showErr('Informe o e-mail.'); return; }
       if (pass.length < 6) { showErr('Senha deve ter ao menos 6 caracteres.'); return; }
       if (pass !== pass2)  { showErr('As senhas não conferem.'); return; }
+      const btn = document.querySelector('#form-register .login-btn');
+      btn.disabled = true; btn.textContent = 'Criando conta…';
       try {
-        Auth.register(name, email, pass);
+        await Auth.register(name, email, pass);
         showOk('Conta criada! Redirecionando…');
         setTimeout(() => { window.location.href = _afterLoginDest(); }, 700);
-      } catch(e) { showErr(e.message); }
+      } catch(e) {
+        showErr(e.message);
+        btn.disabled = false; btn.textContent = 'Criar conta';
+      }
+    }
+
+    // ── Esqueci senha ─────────────────────────────────────
+    async function doForgot() {
+      const email = document.getElementById('f-email').value.trim();
+      if (!email) { showErr('Informe o e-mail.'); return; }
+      const btn = document.getElementById('btn-forgot');
+      btn.disabled = true; btn.textContent = 'Enviando…';
+      try {
+        await Auth.requestPasswordReset(email);
+        showOk('Se o e-mail estiver cadastrado, você receberá o link em instantes. Verifique também o spam.');
+      } catch(e) {
+        showErr(e.message);
+      }
+      btn.disabled = false; btn.textContent = 'Enviar link';
+    }
+
+    // ── Reset de senha ────────────────────────────────────
+    async function doReset() {
+      const pass  = document.getElementById('rs-pass').value;
+      const pass2 = document.getElementById('rs-pass2').value;
+      if (pass.length < 6) { showErr('Senha deve ter ao menos 6 caracteres.'); return; }
+      if (pass !== pass2)  { showErr('As senhas não conferem.'); return; }
+      const btn = document.getElementById('btn-reset');
+      btn.disabled = true; btn.textContent = 'Redefinindo…';
+      try {
+        await Auth.resetPassword(_resetToken, pass);
+        showOk('Senha redefinida! Faça login com a nova senha.');
+        setTimeout(() => switchTab('login'), 2000);
+      } catch(e) {
+        showErr(e.message);
+        btn.disabled = false; btn.textContent = 'Redefinir senha';
+      }
     }
 
     // ── Destino pós-login (checkout pendente ou app) ─────
@@ -316,8 +394,14 @@
       return 'index.html';
     }
 
-    // ── Auto-redirect if already logged ─────────────────
-    if (Auth.isLogged()) window.location.href = _afterLoginDest();
+    // ── Inicialização: detecta ?reset=TOKEN ou já logado ──
+    const _urlParams  = new URLSearchParams(window.location.search);
+    const _resetToken = _urlParams.get('reset');
+    if (_resetToken) {
+      switchTab('reset');
+    } else if (Auth.isLogged()) {
+      window.location.href = _afterLoginDest();
+    }
   </script>
 </body>
 </html>
