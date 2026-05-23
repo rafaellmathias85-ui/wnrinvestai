@@ -22,6 +22,14 @@ jobs:
           cd /var/www/InvestAI
           [ -f "investai/js/config.js" ] && cp investai/js/config.js /tmp/investai_config.bak || true
           git config --global --add safe.directory /var/www/InvestAI
+
+          # Remove objetos git corrompidos (arquivos vazios causados por fetch interrompido)
+          EMPTY=$(find .git/objects -size 0 2>/dev/null | wc -l)
+          if [ "$EMPTY" -gt 0 ]; then
+            echo "Removendo $EMPTY objeto(s) git corrompido(s)..."
+            find .git/objects -size 0 -delete 2>/dev/null || true
+          fi
+
           git fetch origin main
           git reset --hard origin/main
           [ -f "/tmp/investai_config.bak" ] && cp /tmp/investai_config.bak investai/js/config.js || true
