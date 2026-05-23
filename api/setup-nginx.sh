@@ -45,16 +45,23 @@ fi
 
 # Usa tee para escrita privilegiada se necessario
 $SUDO tee "$SNIPPET" > /dev/null << 'NGINXEOF'
-location /api/ {
-    proxy_pass         http://127.0.0.1:3001;
-    proxy_http_version 1.1;
-    proxy_set_header   Host              $host;
-    proxy_set_header   X-Real-IP         $remote_addr;
-    proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
-    proxy_set_header   X-Forwarded-Proto $scheme;
-    add_header         X-Content-Type-Options "nosniff" always;
-    client_max_body_size 64k;
-}
+    # InvestAI API — porta 3001
+    # Paths especificos: prioridade sobre qualquer location /api/ generica existente
+    location /api/auth/ {
+        proxy_pass         http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        client_max_body_size 64k;
+    }
+    location /api/ai      { proxy_pass http://127.0.0.1:3001; proxy_read_timeout 35s; }
+    location /api/health  { proxy_pass http://127.0.0.1:3001; }
+    location /api/plan    { proxy_pass http://127.0.0.1:3001; }
+    location /api/checkout{ proxy_pass http://127.0.0.1:3001; client_max_body_size 64k; }
+    location /api/webhook { proxy_pass http://127.0.0.1:3001; }
+    location /api/b3quote { proxy_pass http://127.0.0.1:3001; }
 NGINXEOF
 SNIPPET_RC=$?
 
@@ -73,14 +80,14 @@ log "nginx -T: $DUMP_LINES linhas"
 head -200 /var/www/InvestAI/nginx-dump.txt >> "$DEBUG_WEB" 2>/dev/null || true
 
 # ── 3. Verifica se ja esta configurado ───────────────────────
-if $SUDO nginx -T 2>/dev/null | grep -q "location /api/"; then
-    log "Proxy /api/ ja ativo — apenas recarregando nginx"
+if $SUDO nginx -T 2>/dev/null | grep -q "location /api/auth/"; then
+    log "Proxy InvestAI /api/auth/ ja ativo — apenas recarregando nginx"
     $SUDO nginx -t 2>&1 | tee -a "$LOG"
     $SUDO nginx -s reload && log "Nginx recarregado OK" || log "ERRO ao recarregar nginx"
     exit 0
 fi
 
-log "Proxy /api/ NAO encontrado — iniciando configuracao automatica"
+log "Proxy InvestAI NAO encontrado — iniciando configuracao automatica"
 
 # ── 4. Encontra e modifica o config correto via Python ───
 python3 << 'PYEOF'
@@ -226,7 +233,7 @@ log "Testando configuracao nginx..."
 if $SUDO nginx -t 2>&1 | tee -a "$LOG"; then
     $SUDO nginx -s reload
     log "Nginx recarregado com sucesso"
-    log "Verificacao: $($SUDO nginx -T 2>/dev/null | grep 'location /api' || echo 'NAO ENCONTRADO')"
+    log "Verificacao: $($SUDO nginx -T 2>/dev/null | grep 'location /api/auth' || echo 'NAO ENCONTRADO')"
 else
     log "ERRO: nginx config invalido apos modificacao"
     $SUDO tail -20 "$($SUDO grep -rl 'investai-api.conf' /etc/nginx/ 2>/dev/null | head -1)" 2>/dev/null | tee -a "$LOG" || true
