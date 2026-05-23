@@ -46,8 +46,9 @@ fi
 TMPSNIPPET=$(mktemp /tmp/investai-snippet.XXXXXX)
 cat > "$TMPSNIPPET" << 'NGINXEOF'
     # InvestAI API — porta 3001
-    # Prefixo /investai/api/ — completamente isolado de /api/ (WNR Audit/MKT)
-    # proxy_pass com URI reescreve o caminho: /investai/api/X -> /api/X no Express
+    # Prefixo /investai/api/ — isolado de /api/ (WNR Audit/MKT)
+    # X-Forwarded-For em todos os blocos: Express usa o IP real para rate limiting
+
     location /investai/api/auth/ {
         proxy_pass         http://127.0.0.1:3001/api/auth/;
         proxy_http_version 1.1;
@@ -57,12 +58,26 @@ cat > "$TMPSNIPPET" << 'NGINXEOF'
         proxy_set_header   X-Forwarded-Proto $scheme;
         client_max_body_size 64k;
     }
-    location /investai/api/ai       { proxy_pass http://127.0.0.1:3001/api/ai;       proxy_read_timeout 35s; }
-    location /investai/api/health   { proxy_pass http://127.0.0.1:3001/api/health;   }
-    location /investai/api/plan     { proxy_pass http://127.0.0.1:3001/api/plan;     }
-    location /investai/api/checkout { proxy_pass http://127.0.0.1:3001/api/checkout; client_max_body_size 64k; }
-    location /investai/api/webhook  { proxy_pass http://127.0.0.1:3001/api/webhook;  }
-    location /investai/api/b3quote  { proxy_pass http://127.0.0.1:3001/api/b3quote;  }
+    location /investai/api/ai {
+        proxy_pass         http://127.0.0.1:3001/api/ai;
+        proxy_set_header   X-Real-IP        $remote_addr;
+        proxy_set_header   X-Forwarded-For  $proxy_add_x_forwarded_for;
+        proxy_read_timeout 35s;
+    }
+    location /investai/api/checkout {
+        proxy_pass         http://127.0.0.1:3001/api/checkout;
+        proxy_set_header   X-Real-IP        $remote_addr;
+        proxy_set_header   X-Forwarded-For  $proxy_add_x_forwarded_for;
+        client_max_body_size 64k;
+    }
+    location /investai/api/webhook {
+        proxy_pass         http://127.0.0.1:3001/api/webhook;
+        proxy_set_header   X-Real-IP        $remote_addr;
+        proxy_set_header   X-Forwarded-For  $proxy_add_x_forwarded_for;
+    }
+    location /investai/api/health  { proxy_pass http://127.0.0.1:3001/api/health;  }
+    location /investai/api/plan    { proxy_pass http://127.0.0.1:3001/api/plan;    }
+    location /investai/api/b3quote { proxy_pass http://127.0.0.1:3001/api/b3quote; }
 NGINXEOF
 
 if cp "$TMPSNIPPET" "$SNIPPET" 2>/dev/null; then

@@ -10,6 +10,10 @@ const authRoutes = require('./routes/auth');
 
 const app = express();
 
+// Confia no primeiro proxy (nginx) para ler o IP real via X-Forwarded-For.
+// Sem isso, todos os clientes aparecem como 127.0.0.1 e compartilham o rate limit.
+app.set('trust proxy', 1);
+
 // ── Logging estruturado ───────────────────────────────────────
 const log = (level, msg, data = {}) => {
   const entry = { ts: new Date().toISOString(), level, msg, ...data };
