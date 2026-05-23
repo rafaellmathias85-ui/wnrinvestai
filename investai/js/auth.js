@@ -60,8 +60,17 @@ const Auth = {
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    if (!res.ok) {
+      const err = new Error(data.error || `HTTP ${res.status}`);
+      err.status = res.status;
+      err.data = data;
+      throw err;
+    }
     return data;
+  },
+
+  _backendUnavailable(err) {
+    return err instanceof TypeError || err?.status === 404 || err?.status === 502 || err?.status === 503 || err?.status === 504;
   },
 
   // ── Cache local após login/register ──────────────────────
@@ -90,15 +99,63 @@ const Auth = {
     localStorage.setItem(this.USERS_KEY, JSON.stringify(users));
   },
 
+  _cacheLocalSession(user) {
+    const exp = Date.now() + 7 * 24 * 60 * 60 * 1000;
+    localStorage.setItem(this.SESSION_KEY, JSON.stringify({
+      id: user.email,
+      name: user.name,
+      email: user.email,
+      avatar: user.avatar || null,
+      token: `local-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      exp,
+      localOnly: true,
+    }));
+  },
+
+  _localRegister(name, email, password) {
+    const users = this._users();
+    if (users[email]) throw new Error('E-mail já cadastrado.');
+    const user = {
+      id: email,
+      name,
+      email,
+      avatar: null,
+      plan: 'free',
+      planExp: null,
+      profile: null,
+      ph: this._hash(password),
+      localOnly: true,
+    };
+    users[email] = user;
+    localStorage.setItem(this.USERS_KEY, JSON.stringify(users));
+    this._cacheLocalSession(user);
+    console.warn('[auth] backend indisponível; conta criada localmente para manter acesso.');
+    return user;
+  },
+
+  _localLogin(email, password) {
+    const user = this._users()[email];
+    if (!user || !user.ph || user.ph !== this._hash(password)) throw new Error('E-mail não encontrado ou senha incorreta.');
+    this._cacheLocalSession(user);
+    console.warn('[auth] backend indisponível; login local temporário.');
+    return user;
+  },
+
   // ── Registro ──────────────────────────────────────────────
   async register(name, email, password) {
     if (!name || name.trim().length < 2) throw new Error('Nome deve ter ao menos 2 caracteres.');
     this._validateEmail(email.toLowerCase().trim());
     this._validatePassword(password);
 
-    const data = await this._api('POST', '/register', { name: name.trim(), email: email.toLowerCase().trim(), password });
-    this._cacheSession(data);
-    return data.user;
+    const key = email.toLowerCase().trim();
+    try {
+      const data = await this._api('POST', '/register', { name: name.trim(), email: key, password });
+      this._cacheSession(data);
+      return data.user;
+    } catch (e) {
+      if (this._backendUnavailable(e)) return this._localRegister(name.trim(), key, password);
+      throw e;
+    }
   },
 
   // ── Login ─────────────────────────────────────────────────
@@ -127,6 +184,8 @@ const Auth = {
           this._recordFail(key);
           throw e;
         }
+      } else if (this._backendUnavailable(e)) {
+        data = { user: this._localLogin(key, password), token: null, expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000 };
       } else {
         if (e.message === 'Senha incorreta.') this._recordFail(key);
         throw e;
@@ -134,7 +193,7 @@ const Auth = {
     }
 
     this._clearFail(key);
-    this._cacheSession(data);
+    if (data.token) this._cacheSession(data);
     return data.user;
   },
 
@@ -149,6 +208,7 @@ const Auth = {
   async validateSession() {
     const s = this.getSession();
     if (!s) return false;
+    if (s.localOnly) return true;
     try {
       const data = await this._api('GET', '/me');
       // Atualiza cache com dados frescos do servidor
