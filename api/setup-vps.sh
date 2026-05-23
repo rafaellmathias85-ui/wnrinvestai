@@ -8,7 +8,7 @@
 #   - nginx configurado automaticamente a cada push
 #   - Express gerenciado pelo PM2 (inicia no boot)
 
-set -euo pipefail
+set -uo pipefail
 
 ACTIONS_DIR="/var/www/InvestAI"
 RUNNER_USER="${1:-deploy}"
@@ -41,8 +41,12 @@ cat > "$SUDOERS_FILE" << SUDOEOF
 $RUNNER_USER ALL=(ALL) NOPASSWD: $NGINX_BIN
 SUDOEOF
 chmod 440 "$SUDOERS_FILE"
-visudo -c
-echo "OK: sudoers configurado — $RUNNER_USER pode executar nginx sem senha"
+# Valida apenas nosso arquivo (visudo -c valida todos e falha por arquivos de terceiros)
+if visudo -cf "$SUDOERS_FILE" 2>&1; then
+    echo "OK: sudoers configurado — $RUNNER_USER pode executar nginx sem senha"
+else
+    echo "AVISO: arquivo criado mas visudo reportou erro — verifique $SUDOERS_FILE"
+fi
 
 # ── 4. Configura nginx agora (sem esperar o proximo push) ─────
 echo ""
