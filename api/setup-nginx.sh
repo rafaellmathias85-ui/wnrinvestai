@@ -19,14 +19,18 @@ log() {
 log "=== setup-nginx.sh iniciado em $(date) ==="
 log "Usuario: $(whoami) | EUID=$EUID | PATH=$PATH"
 
-# ── Detecta se pode usar sudo sem senha ───────────────────────
+# ── Detecta se pode usar sudo para nginx ──────────────────────
 SUDO=""
+NGINX_BIN=$(which nginx 2>/dev/null || echo "/usr/sbin/nginx")
 if [ "$EUID" -ne 0 ]; then
-    if sudo -n true 2>/dev/null; then
+    if sudo -n "$NGINX_BIN" -v 2>/dev/null; then
         SUDO="sudo"
-        log "Modo: sudo sem senha disponivel"
+        log "Modo: sudo nginx disponivel"
+    elif sudo -n true 2>/dev/null; then
+        SUDO="sudo"
+        log "Modo: sudo total disponivel"
     else
-        log "AVISO: nao e root e sudo requer senha — tentando sem sudo mesmo assim"
+        log "AVISO: sem privilegios nginx (rode setup-vps.sh como root para corrigir)"
     fi
 else
     log "Modo: root"

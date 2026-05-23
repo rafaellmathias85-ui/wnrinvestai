@@ -14,53 +14,83 @@ jobs:
         run: |
           mkdir -p /var/www/InvestAI/backups
           tar -czf /var/www/InvestAI/backups/backup-$(date +%Y%m%d-%H%M%S).tar.gz \
-              -C /var/www/InvestAI investai/
-          ls -t /var/www/InvestAI/backups/backup-*.tar.gz 2>/dev/null | tail -n +6 | xargs -r rm --
+              -C /var/www/InvestAI investai/ 2>/dev/null || true
+          ls -t /var/www/InvestAI/backups/backup-*.tar.gz 2>/dev/null | tail -n +6 | xargs -r rm -- || true
 
-      - name: Deploy
+      - name: Atualizar codigo
+        run: |
+          cd /var/www/InvestAI
+          [ -f "investai/js/config.js" ] && cp investai/js/config.js /tmp/investai_config.bak || true
+          git config --global --add safe.directory /var/www/InvestAI
+          git fetch origin main
+          git reset --hard origin/main
+          [ -f "/tmp/investai_config.bak" ] && cp /tmp/investai_config.bak investai/js/config.js || true
+          echo "Commit: $(git log -1 --format='%h %s')"
+
+      - name: Atualizar env
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           MP_ACCESS_TOKEN: ${{ secrets.MP_ACCESS_TOKEN }}
         run: |
-          cd /var/www/InvestAI
-
-          # Preservar config.js local (não versionado)
-          [ -f "investai/js/config.js" ] && cp investai/js/config.js /tmp/investai_config.bak
-
-          git config --global --add safe.directory /var/www/InvestAI
-          git fetch origin main
-          git reset --hard origin/main
-
-          [ -f "/tmp/investai_config.bak" ] && cp /tmp/investai_config.bak investai/js/config.js
-
-          # Atualizar .env (preserva variáveis SMTP e outras locais)
           ENV_FILE="/var/www/InvestAI/api/.env"
           TMP_ENV="/tmp/investai_env.$$"
           [ -f "$ENV_FILE" ] && grep -v "^ANTHROPIC_API_KEY=\|^MP_ACCESS_TOKEN=\|^PORT=" "$ENV_FILE" > "$TMP_ENV" 2>/dev/null || true
           [ -n "$ANTHROPIC_API_KEY" ] && echo "ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}" >> "$TMP_ENV"
           [ -n "$MP_ACCESS_TOKEN"   ] && echo "MP_ACCESS_TOKEN=${MP_ACCESS_TOKEN}"     >> "$TMP_ENV"
           grep -q "^PORT=" "$TMP_ENV" 2>/dev/null || echo "PORT=3001" >> "$TMP_ENV"
-          cp "$TMP_ENV" "$ENV_FILE" && chmod 600 "$ENV_FILE" && echo ".env atualizado"
+          cp "$TMP_ENV" "$ENV_FILE" && chmod 600 "$ENV_FILE"
           rm -f "$TMP_ENV"
+          echo ".env atualizado"
 
-          # Instalar dependências
+      - name: Instalar dependencias
+        run: |
           cd /var/www/InvestAI/api
-          npm install --production
-          npm audit --audit-level=high --production 2>&1 | head -20 || true
+          npm install --production 2>&1 | tail -5
+          npm audit --audit-level=high --production 2>&1 | head -10 || true
 
-          # Reiniciar servidor com PM2
+      - name: Reiniciar API
+        run: |
+          cd /var/www/InvestAI/api
+          mkdir -p /var/www/InvestAI/logs
+
           if pm2 describe investai-api > /dev/null 2>&1; then
             pm2 restart investai-api --update-env
           else
-            pm2 start server.js --name investai-api
+            pm2 start ecosystem.config.js
           fi
 
-          # Garantir startup automático no boot do servidor
           pm2 save --force
           pm2 startup 2>/dev/null | tail -1 | bash 2>/dev/null || true
 
-          echo "Deploy concluido em $(date)"
+          # Aguarda API responder (ate 20s)
+          echo "Aguardando API iniciar..."
+          for i in $(seq 1 20); do
+            if curl -sf --max-time 2 http://127.0.0.1:3001/api/health > /dev/null 2>&1; then
+              echo "API online em ${i}s"
+              break
+            fi
+            sleep 1
+          done
+
+          STATUS=$(curl -sf --max-time 3 http://127.0.0.1:3001/api/health 2>/dev/null || echo '{"status":"offline"}')
+          echo "Health: $STATUS"
 
       - name: Configurar nginx
         continue-on-error: true
-        run: bash /var/www/InvestAI/api/setup-nginx.sh
+        run: |
+          bash /var/www/InvestAI/api/setup-nginx.sh
+          echo "=== nginx-setup.log ==="
+          tail -40 /var/www/InvestAI/nginx-setup.log 2>/dev/null || echo "(log nao encontrado)"
+
+      - name: Verificar deploy
+        run: |
+          echo "=== Deploy concluido: $(date) ==="
+          echo "Commit: $(cd /var/www/InvestAI && git log -1 --format='%h %s' 2>/dev/null)"
+          pm2 list 2>/dev/null | grep -E "investai|name" || true
+          HTTP=$(curl -sf --max-time 5 -o /dev/null -w '%{http_code}' https://wnrtecnologia.com.br/api/health 2>/dev/null || echo 'erro')
+          echo "Proxy nginx /api/health: HTTP $HTTP"
+          if [ "$HTTP" = "200" ]; then
+            echo "SUCESSO: proxy nginx funcionando"
+          else
+            echo "PENDENTE: rode 'sudo bash /var/www/InvestAI/api/setup-vps.sh' no VPS para ativar nginx"
+          fi
