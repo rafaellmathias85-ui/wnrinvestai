@@ -97,11 +97,33 @@ jobs:
           node -e "try { const db = require('./db'); db.getUserByEmail('x@x.com'); console.log('DB OK — SQLite'); } catch(e) { console.error('DB ERRO:', e.message); process.exit(1); }"
 
       - name: Configurar nginx
-        continue-on-error: true
         run: |
           bash /var/www/InvestAI/api/setup-nginx.sh
           echo "=== nginx-setup.log ==="
           tail -40 /var/www/InvestAI/nginx-setup.log 2>/dev/null || echo "(log nao encontrado)"
+          nginx -t
+
+      - name: Validar proxy nginx InvestAI
+        run: |
+          echo "Validando proxy nginx local..."
+          HEALTH=$(curl -sS --max-time 5 -o /tmp/investai_health.out -w '%{http_code}' http://127.0.0.1/investai/api/health || true)
+          echo "HTTP /investai/api/health: $HEALTH"
+          cat /tmp/investai_health.out || true
+          if [ "$HEALTH" != "200" ]; then
+            echo "ERRO: nginx nao esta encaminhando /investai/api/health para a API"
+            exit 1
+          fi
+
+          AUTH=$(curl -sS --max-time 5 -o /tmp/investai_auth.out -w '%{http_code}' \
+            -X POST http://127.0.0.1/investai/api/auth/login \
+            -H "Content-Type: application/json" \
+            -d '{"email":"deploy-probe@investai.local","password":"123456"}' || true)
+          echo "HTTP /investai/api/auth/login: $AUTH"
+          cat /tmp/investai_auth.out || true
+          if [ "$AUTH" != "401" ] && [ "$AUTH" != "200" ]; then
+            echo "ERRO: nginx nao esta encaminhando /investai/api/auth/login para a API"
+            exit 1
+          fi
 
       - name: Verificar deploy
         run: |
@@ -117,10 +139,6 @@ jobs:
           echo "Banco de dados: $DB_STATUS"
 
           # Verifica proxy nginx
-          HTTP=$(curl -sf --max-time 5 -o /dev/null -w '%{http_code}' https://wnrtecnologia.com.br/investai/api/health 2>/dev/null || echo 'erro')
-          echo "Proxy nginx /investai/api/health: HTTP $HTTP"
-          if [ "$HTTP" = "200" ]; then
-            echo "SUCESSO: proxy nginx funcionando"
-          else
-            echo "PENDENTE: rode 'sudo bash /var/www/InvestAI/api/setup-vps.sh' no VPS para ativar nginx"
-          fi
+          HTTP=$(curl -sf --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1/investai/api/health 2>/dev/null || echo 'erro')
+          echo "Proxy nginx local /investai/api/health: HTTP $HTTP"
+          test "$HTTP" = "200"
