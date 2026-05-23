@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "scripts": {
     "dev":            "node api/server.js",
-    "install:deps":   "npm install --prefix api --ignore-scripts"
+    "install:deps":   "npm install --prefix api",
+    "rebuild:sqlite": "npm rebuild better-sqlite3 --prefix api"
   }
 }

@@ -105,6 +105,10 @@ try {
     },
   };
 } catch (e) {
+  if (process.env.NODE_ENV === 'production') {
+    console.error('[db] better-sqlite3 indisponivel em producao:', e.message);
+    throw e;
+  }
   console.warn('[db] better-sqlite3 indisponível — usando mock em memória (somente dev):', e.message);
   const _plans = new Map();
   const _users = new Map();

@@ -77,6 +77,9 @@ const PLANS = {
 
 // ── Auth routes ───────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
+// O frontend vive sob /investai e chama este prefixo. Em producao o nginx
+// tambem reescreve, mas manter o alias aqui preserva o dev local.
+app.use('/investai/api/auth', authRoutes);
 
 // Limpeza periódica de sessões expiradas (a cada 6h)
 setInterval(() => db.deleteExpiredSessions(), 6 * 60 * 60 * 1000);

@@ -91,7 +91,7 @@ if grep -q "location /investai/api/auth/" /tmp/investai_nginx_dump.txt 2>/dev/nu
     else
         log "ERRO: config nginx invalida"
     fi
-    exit 0
+    log "Continuando para garantir include em todos os server blocks InvestAI"
 fi
 
 log "Include NAO ativo — iniciando configuracao"
@@ -216,28 +216,45 @@ log(f"Arquivo alvo: {target} ({len(content.splitlines())} linhas)")
 # Remove qualquer include existente do alvo (em memoria — disco intacto)
 lines = [l for l in content.split('\n') if snippet not in l]
 
-# Encontra ULTIMO fechamento de server block: strip() == '}'
-last_close = -1
+# Insere o include em cada server block do dominio que serve /investai.
+server_blocks = []
+start = None
+depth = 0
 for i, line in enumerate(lines):
-    if line.strip() == '}':
-        last_close = i
+    stripped = line.strip()
+    if start is None and stripped.startswith('server') and '{' in stripped:
+        start = i
+        depth = stripped.count('{') - stripped.count('}')
+        if depth == 0:
+            server_blocks.append((start, i))
+            start = None
+        continue
+    if start is not None:
+        depth += stripped.count('{') - stripped.count('}')
+        if depth == 0:
+            server_blocks.append((start, i))
+            start = None
 
-if last_close < 0:
-    # Fallback: ultima linha com '}'
-    for i, line in enumerate(lines):
-        if line.strip().endswith('}') and not line.strip().startswith('#'):
-            last_close = i
-    if last_close < 0:
-        log(f"ERRO: nao encontrou fechamento de server block em {target}")
-        sys.exit(1)
-    log(f"Fallback: usando linha {last_close+1} como fechamento")
+insert_at = []
+for sidx, eidx in server_blocks:
+    block = '\n'.join(lines[sidx:eidx + 1])
+    is_wnr = 'server_name wnrtecnologia.com.br' in block or 'server_name www.wnrtecnologia.com.br' in block
+    has_investai = '/investai' in block or '/var/www/InvestAI' in block
+    if is_wnr and has_investai:
+        insert_at.append(eidx)
 
-lines.insert(last_close, f'    include {snippet};')
+if not insert_at:
+    log(f"ERRO: nao encontrou server block wnrtecnologia com /investai em {target}")
+    sys.exit(1)
+
+for idx in sorted(insert_at, reverse=True):
+    lines.insert(idx, f'    include {snippet};')
+
 new_content = '\n'.join(lines)
 
-log(f"Inserindo include antes da linha {last_close+1}:")
-for j in range(max(0, last_close-1), min(len(lines), last_close+3)):
-    log(f"  [{j+1}] {lines[j]}")
+log(f"Inserindo include em {len(insert_at)} server block(s):")
+for idx in insert_at:
+    log(f"  antes da linha {idx+1}")
 
 # Escrita atomica: se falhar, original fica intacto no disco
 if not write_file(target, new_content):

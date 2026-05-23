@@ -12,5 +12,8 @@ module.exports = {
     out_file: '/var/www/InvestAI/logs/api-out.log',
     merge_logs: true,
     log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+    env: {
+      NODE_ENV: 'production',
+    },
   }],
 };
