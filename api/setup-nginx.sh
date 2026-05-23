@@ -83,8 +83,13 @@ head -200 /var/www/InvestAI/nginx-dump.txt >> "$DEBUG_WEB" 2>/dev/null || true
 # ── 3. Verifica se include ja esta ativo ─────────────────────
 if $NGINX -T 2>/dev/null | grep -q "location /investai/api/auth/"; then
     log "Proxy InvestAI /investai/api/auth/ ja ativo — apenas recarregando nginx"
-    $NGINX -t 2>&1 | tee -a "$LOG"
-    $NGINX -s reload && log "Nginx recarregado OK" || log "ERRO ao recarregar nginx"
+    $NGINX -t > /tmp/investai_nginx_t.log 2>&1; _RC=$?
+    cat /tmp/investai_nginx_t.log | tee -a "$LOG"
+    if [ $_RC -eq 0 ]; then
+        $NGINX -s reload && log "Nginx recarregado OK" || log "ERRO ao recarregar nginx"
+    else
+        log "ERRO: nginx config invalido — verifique o snippet"
+    fi
     exit 0
 fi
 
@@ -157,26 +162,31 @@ except PermissionError:
     content = r.stdout
     log("Arquivo lido via sudo cat")
 
-if snippet in content:
-    log("Include ja existe no arquivo — nada a fazer")
-    sys.exit(0)
-
 lines = content.split('\n')
+
+# Remove include ja existente (pode estar em posicao errada)
+if snippet in content:
+    before = len(lines)
+    lines = [l for l in lines if snippet not in l]
+    log(f"Include existente removido ({before - len(lines)} linha(s)) para reinserção correta")
+
 log(f"Total de linhas no arquivo: {len(lines)}")
 
 # Brace-counting para encontrar o ultimo server block ao nivel 0
+# - pula linhas vazias e comentarios
+# - so atualiza last_server_close quando um } realmente fecha o bloco
 brace_depth = 0
 last_server_open = -1
 last_server_close = -1
 
 for i, line in enumerate(lines):
     stripped = line.strip()
-    if stripped.startswith('#'):
+    if not stripped or stripped.startswith('#'):
         continue
     if re.match(r'^server\s*\{', stripped) and brace_depth == 0:
         last_server_open = i
     brace_depth += stripped.count('{') - stripped.count('}')
-    if brace_depth == 0 and last_server_open >= 0:
+    if brace_depth == 0 and last_server_open >= 0 and '}' in stripped:
         last_server_close = i
 
 log(f"Ultimo server block: abertura linha {last_server_open}, fechamento linha {last_server_close}")
@@ -227,12 +237,13 @@ fi
 
 # ── 5. Testa e recarrega nginx ────────────────────────────────
 log "Testando configuracao nginx..."
-if $NGINX -t 2>&1 | tee -a "$LOG"; then
+$NGINX -t > /tmp/investai_nginx_t.log 2>&1; NGINX_RC=$?
+cat /tmp/investai_nginx_t.log | tee -a "$LOG"
+if [ $NGINX_RC -eq 0 ]; then
     $NGINX -s reload
     log "Nginx recarregado com sucesso"
     log "Verificacao: $($NGINX -T 2>/dev/null | grep 'location /investai/api/auth' || echo 'NAO ENCONTRADO')"
 else
-    log "ERRO: nginx config invalido apos modificacao"
-    tail -20 "$($NGINX -T 2>/dev/null | grep -o '# configuration file [^:]*' | grep 'investai-api' | head -1 | cut -d' ' -f4)" 2>/dev/null | tee -a "$LOG" || true
+    log "ERRO: nginx config invalido apos modificacao — verifique /etc/nginx/snippets/investai-api.conf"
     exit 1
 fi
