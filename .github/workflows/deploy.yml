@@ -9,128 +9,58 @@ jobs:
     runs-on: self-hosted
 
     steps:
-      - name: Backup estado atual do InvestAI
+      - name: Backup
         continue-on-error: true
         run: |
           mkdir -p /var/www/InvestAI/backups
           tar -czf /var/www/InvestAI/backups/backup-$(date +%Y%m%d-%H%M%S).tar.gz \
               -C /var/www/InvestAI investai/
           ls -t /var/www/InvestAI/backups/backup-*.tar.gz 2>/dev/null | tail -n +6 | xargs -r rm --
-          echo "Backup criado em /var/www/InvestAI/backups/"
 
-      - name: Deploy InvestAI on VPS
+      - name: Deploy
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           MP_ACCESS_TOKEN: ${{ secrets.MP_ACCESS_TOKEN }}
         run: |
           cd /var/www/InvestAI
 
-          if [ -f "investai/js/config.js" ]; then
-            cp investai/js/config.js /tmp/investai_config.backup.js
-          fi
+          # Preservar config.js local (não versionado)
+          [ -f "investai/js/config.js" ] && cp investai/js/config.js /tmp/investai_config.bak
 
           git config --global --add safe.directory /var/www/InvestAI
           git fetch origin main
           git reset --hard origin/main
 
-          if [ -f "/tmp/investai_config.backup.js" ]; then
-            cp /tmp/investai_config.backup.js investai/js/config.js
-          fi
+          [ -f "/tmp/investai_config.bak" ] && cp /tmp/investai_config.bak investai/js/config.js
 
-          # ── Atualizar variáveis de ambiente ───────────────────────
+          # Atualizar .env (preserva variáveis SMTP e outras locais)
           ENV_FILE="/var/www/InvestAI/api/.env"
           TMP_ENV="/tmp/investai_env.$$"
-
-          if [ -f "$ENV_FILE" ]; then
-            grep -v "^ANTHROPIC_API_KEY=\|^MP_ACCESS_TOKEN=\|^PORT=" "$ENV_FILE" > "$TMP_ENV" 2>/dev/null || true
-          fi
-
+          [ -f "$ENV_FILE" ] && grep -v "^ANTHROPIC_API_KEY=\|^MP_ACCESS_TOKEN=\|^PORT=" "$ENV_FILE" > "$TMP_ENV" 2>/dev/null || true
           [ -n "$ANTHROPIC_API_KEY" ] && echo "ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}" >> "$TMP_ENV"
           [ -n "$MP_ACCESS_TOKEN"   ] && echo "MP_ACCESS_TOKEN=${MP_ACCESS_TOKEN}"     >> "$TMP_ENV"
           grep -q "^PORT=" "$TMP_ENV" 2>/dev/null || echo "PORT=3001" >> "$TMP_ENV"
-
-          if cp "$TMP_ENV" "$ENV_FILE" 2>/dev/null; then
-            chmod 600 "$ENV_FILE"
-            echo ".env atualizado com secrets do GitHub"
-          else
-            echo "AVISO: sem permissao para sobrescrever $ENV_FILE"
-          fi
+          cp "$TMP_ENV" "$ENV_FILE" && chmod 600 "$ENV_FILE" && echo ".env atualizado"
           rm -f "$TMP_ENV"
 
-          # ── Instalar dependências do backend ──────────────────────
+          # Instalar dependências
           cd /var/www/InvestAI/api
           npm install --production
-          npm audit --audit-level=high --production 2>&1 | head -30 || true
+          npm audit --audit-level=high --production 2>&1 | head -20 || true
 
-          # ── Reiniciar API com PM2 ─────────────────────────────────
+          # Reiniciar servidor com PM2
           if pm2 describe investai-api > /dev/null 2>&1; then
-            pm2 restart investai-api
+            pm2 restart investai-api --update-env
           else
             pm2 start server.js --name investai-api
-            pm2 save
           fi
 
-          echo "Deploy InvestAI concluido em $(date)"
+          # Garantir startup automático no boot do servidor
+          pm2 save --force
+          pm2 startup 2>/dev/null | tail -1 | bash 2>/dev/null || true
 
-      - name: Configurar nginx proxy /api/
+          echo "Deploy concluido em $(date)"
+
+      - name: Configurar nginx
         continue-on-error: true
-        run: |
-          # Cria snippet com o bloco location /api/ → Node.js
-          mkdir -p /etc/nginx/snippets
-          SNIPPET="/etc/nginx/snippets/investai-api.conf"
-
-          cat > "$SNIPPET" << 'NGINXEOF'
-          location /api/ {
-              proxy_pass http://127.0.0.1:3001;
-              proxy_http_version 1.1;
-              proxy_set_header Host $host;
-              proxy_set_header X-Real-IP $remote_addr;
-              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-              proxy_set_header X-Forwarded-Proto $scheme;
-              add_header X-Content-Type-Options "nosniff" always;
-              client_max_body_size 64k;
-          }
-          NGINXEOF
-
-          # Se o proxy já está ativo, apenas recarrega; caso contrário injeta o include
-          if nginx -T 2>/dev/null | grep -q "location /api/"; then
-            echo "Proxy /api/ já configurado no nginx"
-          else
-            # Encontra o arquivo de config que referencia wnrtecnologia
-            NGINX_CONF=$(grep -rl "wnrtecnologia" /etc/nginx/sites-enabled/ /etc/nginx/conf.d/ 2>/dev/null | head -1)
-            if [ -z "$NGINX_CONF" ]; then
-              NGINX_CONF=$(grep -rl "server_name" /etc/nginx/sites-enabled/ 2>/dev/null | head -1)
-            fi
-
-            if [ -n "$NGINX_CONF" ] && [ -f "$NGINX_CONF" ]; then
-              python3 - "$NGINX_CONF" "$SNIPPET" << 'PYEOF'
-          import sys
-          conf_file = sys.argv[1]
-          snippet   = sys.argv[2]
-          content   = open(conf_file).read()
-          include   = f'\n    include {snippet};\n'
-          if snippet not in content:
-              idx = content.rfind('}')
-              if idx != -1:
-                  content = content[:idx] + include + content[idx:]
-                  open(conf_file, 'w').write(content)
-                  print(f'Include adicionado em {conf_file}')
-              else:
-                  print('ERRO: nao encontrou } final no config nginx')
-          else:
-              print('Include ja existe')
-          PYEOF
-              echo "Arquivo nginx modificado: $NGINX_CONF"
-            else
-              echo "AVISO: nenhum arquivo nginx encontrado — adicione manualmente o proxy /api/"
-            fi
-          fi
-
-          # Testa configuração e recarrega nginx
-          if nginx -t 2>&1; then
-            nginx -s reload
-            echo "Nginx recarregado com sucesso"
-          else
-            echo "ERRO: nginx config invalido — verifique manualmente"
-            nginx -T 2>/dev/null | tail -20
-          fi
+        run: bash /var/www/InvestAI/api/setup-nginx.sh
