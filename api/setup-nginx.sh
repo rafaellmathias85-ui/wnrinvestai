@@ -4,14 +4,43 @@
 
 SNIPPET="/etc/nginx/snippets/investai-api.conf"
 LOG="/var/www/InvestAI/nginx-setup.log"
+DEBUG_WEB="/var/www/InvestAI/investai/nginx-debug.txt"
 
-log() { echo "$1" | tee -a "$LOG"; }
+log() {
+    local msg="$1"
+    echo "$msg" | tee -a "$LOG"
+    echo "$msg" >> "$DEBUG_WEB" 2>/dev/null
+}
+
+# Limpa logs anteriores
+: > "$LOG" 2>/dev/null || true
+: > "$DEBUG_WEB" 2>/dev/null || true
 
 log "=== setup-nginx.sh iniciado em $(date) ==="
+log "Usuario: $(whoami) | EUID=$EUID | PATH=$PATH"
 
-# ── 1. Cria snippet com location /api/ ───────────────────
-mkdir -p /etc/nginx/snippets
-cat > "$SNIPPET" << 'NGINXEOF'
+# ── Detecta se pode usar sudo sem senha ───────────────────────
+SUDO=""
+if [ "$EUID" -ne 0 ]; then
+    if sudo -n true 2>/dev/null; then
+        SUDO="sudo"
+        log "Modo: sudo sem senha disponivel"
+    else
+        log "AVISO: nao e root e sudo requer senha — tentando sem sudo mesmo assim"
+    fi
+else
+    log "Modo: root"
+fi
+
+# ── 1. Cria snippet com location /api/ ───────────────────────
+if $SUDO mkdir -p /etc/nginx/snippets 2>&1 | tee -a "$LOG"; then
+    log "OK: diretorio /etc/nginx/snippets existe"
+else
+    log "ERRO: nao foi possivel criar /etc/nginx/snippets"
+fi
+
+# Usa tee para escrita privilegiada se necessario
+$SUDO tee "$SNIPPET" > /dev/null << 'NGINXEOF'
 location /api/ {
     proxy_pass         http://127.0.0.1:3001;
     proxy_http_version 1.1;
@@ -23,18 +52,27 @@ location /api/ {
     client_max_body_size 64k;
 }
 NGINXEOF
-log "Snippet escrito: $SNIPPET"
+SNIPPET_RC=$?
 
-# ── 2. Salva config atual para debug ─────────────────────
-nginx -T 2>/dev/null > /var/www/InvestAI/nginx-dump.txt || true
-log "Config nginx salvo em nginx-dump.txt ($(wc -l < /var/www/InvestAI/nginx-dump.txt) linhas)"
+if [ $SNIPPET_RC -eq 0 ] && $SUDO test -f "$SNIPPET"; then
+    log "Snippet escrito com sucesso: $SNIPPET"
+else
+    log "ERRO: falha ao escrever snippet (rc=$SNIPPET_RC)"
+fi
 
-# ── 3. Verifica se já está configurado ───────────────────
-if nginx -T 2>/dev/null | grep -q "location /api/"; then
+# ── 2. Salva config atual para debug ─────────────────────────
+$SUDO nginx -T 2>/dev/null > /var/www/InvestAI/nginx-dump.txt || true
+DUMP_LINES=$(wc -l < /var/www/InvestAI/nginx-dump.txt 2>/dev/null || echo "0")
+log "nginx -T: $DUMP_LINES linhas"
+
+# Copia dump para debug web (primeiros 200 linhas para nao encher)
+head -200 /var/www/InvestAI/nginx-dump.txt >> "$DEBUG_WEB" 2>/dev/null || true
+
+# ── 3. Verifica se ja esta configurado ───────────────────────
+if $SUDO nginx -T 2>/dev/null | grep -q "location /api/"; then
     log "Proxy /api/ ja ativo — apenas recarregando nginx"
-    nginx -t 2>&1 | tee -a "$LOG"
-    nginx -s reload
-    log "Nginx recarregado OK"
+    $SUDO nginx -t 2>&1 | tee -a "$LOG"
+    $SUDO nginx -s reload && log "Nginx recarregado OK" || log "ERRO ao recarregar nginx"
     exit 0
 fi
 
@@ -44,18 +82,29 @@ log "Proxy /api/ NAO encontrado — iniciando configuracao automatica"
 python3 << 'PYEOF'
 import subprocess, re, os, sys
 
-LOG = "/var/www/InvestAI/nginx-setup.log"
+LOG      = "/var/www/InvestAI/nginx-setup.log"
+WEB_LOG  = "/var/www/InvestAI/investai/nginx-debug.txt"
+
 def log(msg):
     print(msg)
-    open(LOG, 'a').write(msg + "\n")
+    for path in [LOG, WEB_LOG]:
+        try:
+            with open(path, 'a') as f:
+                f.write(msg + "\n")
+        except Exception:
+            pass
 
-# Roda nginx -T e captura saida
+# Roda nginx -T (tenta sudo se nginx nao retornar nada sem ele)
 result = subprocess.run(['nginx', '-T'], capture_output=True, text=True)
 full = result.stdout
+if not full.strip():
+    result = subprocess.run(['sudo', 'nginx', '-T'], capture_output=True, text=True)
+    full = result.stdout
+    log("nginx -T sem saida, tentou com sudo")
 
 # Extrai lista de arquivos de config
 config_files = re.findall(r'# configuration file (.+?):', full)
-log(f"Arquivos nginx encontrados: {config_files}")
+log(f"Arquivos nginx encontrados ({len(config_files)}): {config_files}")
 
 snippet = '/etc/nginx/snippets/investai-api.conf'
 
@@ -67,50 +116,60 @@ for ssl_required in [True, False]:
     for cf in config_files:
         try:
             content = open(cf).read()
-            has_site = any(k in content for k in keywords)
-            has_ssl  = ('443' in content or 'ssl_certificate' in content)
-            if has_site and (not ssl_required or has_ssl):
-                target = cf
-                log(f"Arquivo alvo encontrado: {cf} (ssl={has_ssl})")
-                break
+        except PermissionError:
+            try:
+                r = subprocess.run(['sudo', 'cat', cf], capture_output=True, text=True)
+                content = r.stdout
+            except Exception as e2:
+                log(f"  erro de permissao ao ler {cf}: {e2}")
+                continue
         except Exception as e:
             log(f"  erro ao ler {cf}: {e}")
+            continue
+        has_site = any(k in content for k in keywords)
+        has_ssl  = ('443' in content or 'ssl_certificate' in content)
+        log(f"  {cf}: has_site={has_site}, has_ssl={has_ssl}")
+        if has_site and (not ssl_required or has_ssl):
+            target = cf
+            log(f"Arquivo alvo encontrado: {cf} (ssl={has_ssl})")
+            break
     if target:
         break
 
 if not target:
     log("ERRO: nenhum arquivo nginx adequado encontrado")
-    log("Conteudo de nginx-dump.txt:")
-    log(open('/var/www/InvestAI/nginx-dump.txt').read()[:3000])
+    log(f"Primeiras 3000 chars do nginx -T:\n{full[:3000]}")
     sys.exit(1)
 
-content = open(target).read()
+# Le o conteudo do arquivo (possivelmente via sudo)
+try:
+    content = open(target).read()
+except PermissionError:
+    r = subprocess.run(['sudo', 'cat', target], capture_output=True, text=True)
+    content = r.stdout
+    log("Arquivo lido via sudo cat")
+
 if snippet in content:
-    log("Include ja existe no arquivo")
+    log("Include ja existe no arquivo — nada a fazer")
     sys.exit(0)
 
-include_line = f'\n    include {snippet};\n'
-
-# Encontra o servidor block HTTPS (tem 443 ou ssl_certificate)
-# e insere o include antes do seu ultimo }
-# Estrategia: encontra a ultima ocorrencia de } que fecha um server block com ssl
 lines = content.split('\n')
 log(f"Total de linhas no arquivo: {len(lines)}")
 
-# Encontra o ultimo } do arquivo (fecha o ultimo server block)
-# Faz brace-counting para achar o fechamento correto do ultimo server block
+# Brace-counting para encontrar o ultimo server block ao nivel 0
 brace_depth = 0
 last_server_open = -1
 last_server_close = -1
 
 for i, line in enumerate(lines):
     stripped = line.strip()
-    if re.match(r'^server\s*\{', stripped):
-        if brace_depth == 0:
-            last_server_open = i
-    opens  = stripped.count('{')
-    closes = stripped.count('}')
-    brace_depth += opens - closes
+    if stripped.startswith('#'):
+        continue
+    # Detecta abertura de server block no nivel 0
+    if re.match(r'^server\s*\{', stripped) and brace_depth == 0:
+        last_server_open = i
+    # Contagem de chaves (simples, ignora strings/comentarios)
+    brace_depth += stripped.count('{') - stripped.count('}')
     if brace_depth == 0 and last_server_open >= 0:
         last_server_close = i
         # Nao break — queremos o ULTIMO server block
@@ -118,18 +177,38 @@ for i, line in enumerate(lines):
 log(f"Ultimo server block: abertura linha {last_server_open}, fechamento linha {last_server_close}")
 
 if last_server_close < 0:
-    # Fallback: insere antes do ultimo }
     idx = content.rfind('}')
-    new_content = content[:idx] + include_line + content[idx:]
+    new_content = content[:idx] + f'\n    include {snippet};\n' + content[idx:]
     log("Fallback: inserindo antes do ultimo } do arquivo")
 else:
-    # Insere antes do fechamento do ultimo server block
     lines.insert(last_server_close, f'    include {snippet};')
     new_content = '\n'.join(lines)
-    log(f"Include inserido na linha {last_server_close}")
+    log(f"Include inserido antes da linha {last_server_close}")
 
-open(target, 'w').write(new_content)
-log(f"Arquivo atualizado: {target}")
+# Escreve o arquivo (tenta direto, depois via sudo tee)
+write_ok = False
+try:
+    with open(target, 'w') as f:
+        f.write(new_content)
+    log(f"Arquivo escrito diretamente: {target}")
+    write_ok = True
+except PermissionError:
+    import tempfile
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.nginx', delete=False) as tf:
+        tf.write(new_content)
+        tmp = tf.name
+    r = subprocess.run(['sudo', 'cp', tmp, target], capture_output=True, text=True)
+    os.unlink(tmp)
+    if r.returncode == 0:
+        log(f"Arquivo escrito via sudo cp: {target}")
+        write_ok = True
+    else:
+        log(f"ERRO ao escrever via sudo cp: {r.stderr}")
+
+if not write_ok:
+    sys.exit(1)
+
+log(f"Configuracao concluida. Include adicionado em {target}")
 PYEOF
 
 RC=$?
@@ -138,16 +217,14 @@ if [ $RC -ne 0 ]; then
     exit 1
 fi
 
-# ── 5. Testa e recarrega nginx ────────────────────────────
+# ── 5. Testa e recarrega nginx ────────────────────────────────
 log "Testando configuracao nginx..."
-if nginx -t 2>&1 | tee -a "$LOG"; then
-    nginx -s reload
+if $SUDO nginx -t 2>&1 | tee -a "$LOG"; then
+    $SUDO nginx -s reload
     log "Nginx recarregado com sucesso"
-    log "Verificacao final: $(nginx -T 2>/dev/null | grep 'location /api' || echo 'NAO ENCONTRADO')"
+    log "Verificacao: $($SUDO nginx -T 2>/dev/null | grep 'location /api' || echo 'NAO ENCONTRADO')"
 else
     log "ERRO: nginx config invalido apos modificacao"
-    # Mostra as ultimas linhas do config para debug
-    log "--- ultimas 20 linhas do arquivo modificado ---"
-    tail -20 "$(grep -rl 'investai-api.conf' /etc/nginx/ 2>/dev/null | head -1)" 2>/dev/null | tee -a "$LOG" || true
+    $SUDO tail -20 "$($SUDO grep -rl 'investai-api.conf' /etc/nginx/ 2>/dev/null | head -1)" 2>/dev/null | tee -a "$LOG" || true
     exit 1
 fi
