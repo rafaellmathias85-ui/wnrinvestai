@@ -16,6 +16,7 @@ log() {
     echo "$msg" >> "$DEBUG_WEB" 2>/dev/null || true
 }
 
+mkdir -p "$BACKUP_DIR" 2>/dev/null || BACKUP_DIR="/tmp/investai-nginx-backups"
 mkdir -p "$BACKUP_DIR" 2>/dev/null || true
 : > "$LOG" 2>/dev/null || true
 : > "$DEBUG_WEB" 2>/dev/null || true
@@ -45,14 +46,14 @@ fi
 
 STAMP=$(date +%Y%m%d-%H%M%S)
 BACKUP="$BACKUP_DIR/wnrtecnologia.$STAMP.bak"
-if ! $SUDO cp "$TARGET" "$BACKUP" 2>/dev/null; then
+if ! cp "$TARGET" "$BACKUP" 2>/dev/null; then
     log "ERRO: nao foi possivel criar backup em $BACKUP"
     exit 1
 fi
 log "Backup: $BACKUP"
 
 TMP=$(mktemp /tmp/investai-nginx.XXXXXX)
-$SUDO python3 - "$TARGET" "$TMP" <<'PYEOF'
+python3 - "$TARGET" "$TMP" <<'PYEOF'
 import re
 import sys
 
@@ -141,7 +142,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-if ! $SUDO cp "$TMP" "$TARGET" 2>/dev/null; then
+if ! cp "$TMP" "$TARGET" 2>/dev/null; then
     log "ERRO: sem permissao para atualizar $TARGET"
     rm -f "$TMP"
     exit 1
@@ -153,7 +154,7 @@ TEST_LOG=$(mktemp /tmp/investai-nginx-test.XXXXXX)
 if ! $NGINX -t > "$TEST_LOG" 2>&1; then
     cat "$TEST_LOG" | tee -a "$LOG"
     log "ERRO: nginx -t falhou; revertendo backup"
-    $SUDO cp "$BACKUP" "$TARGET" 2>/dev/null || true
+    cp "$BACKUP" "$TARGET" 2>/dev/null || true
     rm -f "$TEST_LOG"
     exit 1
 fi
