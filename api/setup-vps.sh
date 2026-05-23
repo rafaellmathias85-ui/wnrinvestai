@@ -84,30 +84,24 @@ echo ""
 echo "Verificando banco de dados..."
 API_DIR="$ACTIONS_DIR/api"
 
-if [ -f "$API_DIR/server.js" ] && command -v node >/dev/null 2>&1; then
-    node << 'JSEOF'
-const path = require('path');
-require('dotenv').config({ path: path.join('/var/www/InvestAI/api', '.env') });
-try {
-  const db      = require('/var/www/InvestAI/api/db');
-  const bcrypt  = require('/var/www/InvestAI/api/node_modules/bcryptjs');
-  const email   = 'rafaellmathias85@gmail.com';
-  const name    = 'Rafael Mathias';
-  const pass    = 'InvestAI@2026';
-
-  if (!db.getUserByEmail(email)) {
-    const hash = bcrypt.hashSync(pass, 10);
-    db.createUser(email, name, hash);
-    console.log('Admin criado: ' + email);
-  } else {
-    console.log('Admin ja existe: ' + email);
-  }
-} catch(e) {
-  console.log('AVISO DB: ' + e.message);
-}
-JSEOF
+if [ -f "$API_DIR/db.js" ] && command -v node >/dev/null 2>&1; then
+    cd "$API_DIR"
+    node -e "
+      try {
+        const db     = require('./db');
+        const bcrypt = require('./node_modules/bcryptjs');
+        const email  = 'rafaellmathias85@gmail.com';
+        if (!db.getUserByEmail(email)) {
+          db.createUser(email, 'Rafael Mathias', bcrypt.hashSync('InvestAI@2026', 10));
+          console.log('Admin criado: ' + email);
+        } else {
+          console.log('Admin ja existe: ' + email);
+        }
+      } catch(e) { console.log('AVISO DB: ' + e.message); }
+    "
+    cd -
 else
-    echo "AVISO: node ou server.js nao encontrado — pule a criacao do admin"
+    echo "AVISO: api/db.js nao encontrado"
 fi
 
 # ── Resumo ─────────────────────────────────────────────────────
