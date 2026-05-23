@@ -1,78 +1,153 @@
 #!/bin/bash
-# setup-nginx.sh — Configura o proxy /api/ no nginx para o InvestAI.
-# Executado automaticamente pelo deploy.yml a cada push.
-
-set -e
+# setup-nginx.sh — Configura proxy /api/ no nginx para o InvestAI.
+# Chamado pelo deploy.yml a cada push.
 
 SNIPPET="/etc/nginx/snippets/investai-api.conf"
-mkdir -p /etc/nginx/snippets
+LOG="/var/www/InvestAI/nginx-setup.log"
 
-# Escreve o bloco location /api/ -> Node.js 3001
+log() { echo "$1" | tee -a "$LOG"; }
+
+log "=== setup-nginx.sh iniciado em $(date) ==="
+
+# ── 1. Cria snippet com location /api/ ───────────────────
+mkdir -p /etc/nginx/snippets
 cat > "$SNIPPET" << 'NGINXEOF'
 location /api/ {
-    proxy_pass http://127.0.0.1:3001;
+    proxy_pass         http://127.0.0.1:3001;
     proxy_http_version 1.1;
-    proxy_set_header Host              $host;
-    proxy_set_header X-Real-IP         $remote_addr;
-    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    add_header X-Content-Type-Options  "nosniff" always;
+    proxy_set_header   Host              $host;
+    proxy_set_header   X-Real-IP         $remote_addr;
+    proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header   X-Forwarded-Proto $scheme;
+    add_header         X-Content-Type-Options "nosniff" always;
     client_max_body_size 64k;
 }
 NGINXEOF
+log "Snippet escrito: $SNIPPET"
 
-echo "Snippet escrito: $SNIPPET"
+# ── 2. Salva config atual para debug ─────────────────────
+nginx -T 2>/dev/null > /var/www/InvestAI/nginx-dump.txt || true
+log "Config nginx salvo em nginx-dump.txt ($(wc -l < /var/www/InvestAI/nginx-dump.txt) linhas)"
 
-# Se o location /api/ já está ativo no nginx, só recarrega
+# ── 3. Verifica se já está configurado ───────────────────
 if nginx -T 2>/dev/null | grep -q "location /api/"; then
-    echo "Proxy /api/ já configurado no nginx"
-else
-    # Encontra o arquivo de configuração do site
-    NGINX_CONF=""
-    for f in \
-        /etc/nginx/sites-enabled/wnrtecnologia.com.br \
-        /etc/nginx/conf.d/wnrtecnologia.conf \
-        /etc/nginx/sites-enabled/default \
-        $(ls /etc/nginx/sites-enabled/ 2>/dev/null | head -3); do
-        if [ -f "$f" ] && grep -q "server_name\|wnrtecnologia" "$f" 2>/dev/null; then
-            NGINX_CONF="$f"
-            break
-        fi
-    done
-
-    if [ -z "$NGINX_CONF" ]; then
-        NGINX_CONF=$(grep -rl "server_name" /etc/nginx/sites-enabled/ /etc/nginx/conf.d/ 2>/dev/null | head -1)
-    fi
-
-    if [ -n "$NGINX_CONF" ] && [ -f "$NGINX_CONF" ]; then
-        echo "Adicionando include em: $NGINX_CONF"
-        # Usa Python3 para inserir o include antes do último } do arquivo
-        python3 - "$NGINX_CONF" "$SNIPPET" <<'PYEOF'
-import sys
-conf_file, snippet = sys.argv[1], sys.argv[2]
-content = open(conf_file).read()
-include = '\n    include ' + snippet + ';\n'
-if snippet not in content:
-    idx = content.rfind('}')
-    if idx != -1:
-        content = content[:idx] + include + content[idx:]
-        open(conf_file, 'w').write(content)
-        print('Include adicionado: ' + conf_file)
-    else:
-        print('ERRO: nao encontrou } em ' + conf_file)
-        sys.exit(1)
-else:
-    print('Include ja existe em ' + conf_file)
-PYEOF
-    else
-        echo "AVISO: nenhum arquivo nginx encontrado."
-        echo "Adicione manualmente em /etc/nginx/sites-enabled/ o bloco:"
-        cat "$SNIPPET"
-        exit 0
-    fi
+    log "Proxy /api/ ja ativo — apenas recarregando nginx"
+    nginx -t 2>&1 | tee -a "$LOG"
+    nginx -s reload
+    log "Nginx recarregado OK"
+    exit 0
 fi
 
-# Valida config e recarrega nginx
-nginx -t 2>&1
-nginx -s reload
-echo "Nginx recarregado com sucesso"
+log "Proxy /api/ NAO encontrado — iniciando configuracao automatica"
+
+# ── 4. Encontra e modifica o config correto via Python ───
+python3 << 'PYEOF'
+import subprocess, re, os, sys
+
+LOG = "/var/www/InvestAI/nginx-setup.log"
+def log(msg):
+    print(msg)
+    open(LOG, 'a').write(msg + "\n")
+
+# Roda nginx -T e captura saida
+result = subprocess.run(['nginx', '-T'], capture_output=True, text=True)
+full = result.stdout
+
+# Extrai lista de arquivos de config
+config_files = re.findall(r'# configuration file (.+?):', full)
+log(f"Arquivos nginx encontrados: {config_files}")
+
+snippet = '/etc/nginx/snippets/investai-api.conf'
+
+# Prioridade: arquivo com ssl/443 + referencia ao site
+keywords = ['wnrtecnologia', '/var/www/InvestAI', 'investai']
+target = None
+
+for ssl_required in [True, False]:
+    for cf in config_files:
+        try:
+            content = open(cf).read()
+            has_site = any(k in content for k in keywords)
+            has_ssl  = ('443' in content or 'ssl_certificate' in content)
+            if has_site and (not ssl_required or has_ssl):
+                target = cf
+                log(f"Arquivo alvo encontrado: {cf} (ssl={has_ssl})")
+                break
+        except Exception as e:
+            log(f"  erro ao ler {cf}: {e}")
+    if target:
+        break
+
+if not target:
+    log("ERRO: nenhum arquivo nginx adequado encontrado")
+    log("Conteudo de nginx-dump.txt:")
+    log(open('/var/www/InvestAI/nginx-dump.txt').read()[:3000])
+    sys.exit(1)
+
+content = open(target).read()
+if snippet in content:
+    log("Include ja existe no arquivo")
+    sys.exit(0)
+
+include_line = f'\n    include {snippet};\n'
+
+# Encontra o servidor block HTTPS (tem 443 ou ssl_certificate)
+# e insere o include antes do seu ultimo }
+# Estrategia: encontra a ultima ocorrencia de } que fecha um server block com ssl
+lines = content.split('\n')
+log(f"Total de linhas no arquivo: {len(lines)}")
+
+# Encontra o ultimo } do arquivo (fecha o ultimo server block)
+# Faz brace-counting para achar o fechamento correto do ultimo server block
+brace_depth = 0
+last_server_open = -1
+last_server_close = -1
+
+for i, line in enumerate(lines):
+    stripped = line.strip()
+    if re.match(r'^server\s*\{', stripped):
+        if brace_depth == 0:
+            last_server_open = i
+    opens  = stripped.count('{')
+    closes = stripped.count('}')
+    brace_depth += opens - closes
+    if brace_depth == 0 and last_server_open >= 0:
+        last_server_close = i
+        # Nao break — queremos o ULTIMO server block
+
+log(f"Ultimo server block: abertura linha {last_server_open}, fechamento linha {last_server_close}")
+
+if last_server_close < 0:
+    # Fallback: insere antes do ultimo }
+    idx = content.rfind('}')
+    new_content = content[:idx] + include_line + content[idx:]
+    log("Fallback: inserindo antes do ultimo } do arquivo")
+else:
+    # Insere antes do fechamento do ultimo server block
+    lines.insert(last_server_close, f'    include {snippet};')
+    new_content = '\n'.join(lines)
+    log(f"Include inserido na linha {last_server_close}")
+
+open(target, 'w').write(new_content)
+log(f"Arquivo atualizado: {target}")
+PYEOF
+
+RC=$?
+if [ $RC -ne 0 ]; then
+    log "Python script falhou com codigo $RC"
+    exit 1
+fi
+
+# ── 5. Testa e recarrega nginx ────────────────────────────
+log "Testando configuracao nginx..."
+if nginx -t 2>&1 | tee -a "$LOG"; then
+    nginx -s reload
+    log "Nginx recarregado com sucesso"
+    log "Verificacao final: $(nginx -T 2>/dev/null | grep 'location /api' || echo 'NAO ENCONTRADO')"
+else
+    log "ERRO: nginx config invalido apos modificacao"
+    # Mostra as ultimas linhas do config para debug
+    log "--- ultimas 20 linhas do arquivo modificado ---"
+    tail -20 "$(grep -rl 'investai-api.conf' /etc/nginx/ 2>/dev/null | head -1)" 2>/dev/null | tee -a "$LOG" || true
+    exit 1
+fi
