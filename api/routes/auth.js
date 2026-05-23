@@ -47,7 +47,7 @@ async function _sendResetEmail(email, link) {
 const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,255}\.[^\s@]{2,}$/;
 const SESSION_TTL = 7 * 24 * 60 * 60 * 1000;
 const RESET_TTL   = 60 * 60 * 1000;
-const BCRYPT_ROUNDS = 12;
+const BCRYPT_ROUNDS = 10;
 
 function _token() { return crypto.randomBytes(32).toString('hex'); }
 

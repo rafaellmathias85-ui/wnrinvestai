@@ -53,8 +53,18 @@ jobs:
       - name: Instalar dependencias
         run: |
           cd /var/www/InvestAI/api
-          npm install --production 2>&1 | tail -5
-          npm audit --audit-level=high --production 2>&1 | head -10 || true
+          # Evita recompilar better-sqlite3 (modulo nativo) em cada push.
+          # So instala se package.json ou package-lock.json mudaram.
+          HASH_NOW=$(md5sum package.json package-lock.json 2>/dev/null | md5sum | cut -d' ' -f1)
+          HASH_FILE="/var/www/InvestAI/.pkg_hash"
+          HASH_OLD=$(cat "$HASH_FILE" 2>/dev/null || echo "")
+          if [ "$HASH_NOW" != "$HASH_OLD" ]; then
+            echo "Dependencias mudaram — instalando..."
+            npm install --production --prefer-offline 2>&1 | tail -5
+            echo "$HASH_NOW" > "$HASH_FILE"
+          else
+            echo "Dependencias sem alteracao — pulando npm install"
+          fi
 
       - name: Reiniciar API
         run: |
@@ -65,10 +75,8 @@ jobs:
             pm2 restart investai-api --update-env
           else
             pm2 start ecosystem.config.js
+            pm2 save --force
           fi
-
-          pm2 save --force
-          pm2 startup 2>/dev/null | tail -1 | bash 2>/dev/null || true
 
           # Aguarda API responder (ate 20s)
           echo "Aguardando API iniciar..."
