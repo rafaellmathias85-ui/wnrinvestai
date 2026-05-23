@@ -66,7 +66,7 @@ const Auth = {
 
   // ── Cache local após login/register ──────────────────────
   _cacheSession(data) {
-    // Salva sessão com token para chamadas autenticadas
+    if (!data || !data.user) throw new Error('Resposta inválida do servidor. Tente novamente.');
     localStorage.setItem(this.SESSION_KEY, JSON.stringify({
       id:     data.user.email,
       name:   data.user.name,

@@ -40,14 +40,13 @@ async function _sendResetEmail(email, link) {
       console.error('[email]', e.message);
     }
   }
-  // Fallback dev: loga o link no console
   console.log(`[INVESTAI RESET LINK] ${email} → ${link}`);
 }
 
 // ── Helpers ───────────────────────────────────────────────────
 const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,255}\.[^\s@]{2,}$/;
-const SESSION_TTL = 7 * 24 * 60 * 60 * 1000;  // 7 dias
-const RESET_TTL   = 60 * 60 * 1000;            // 1 hora
+const SESSION_TTL = 7 * 24 * 60 * 60 * 1000;
+const RESET_TTL   = 60 * 60 * 1000;
 const BCRYPT_ROUNDS = 12;
 
 function _token() { return crypto.randomBytes(32).toString('hex'); }
@@ -66,6 +65,7 @@ function _sessionUser(req, res) {
 }
 
 function _buildSession(token, user, expiresAt) {
+  if (!user) throw new Error('Usuário não encontrado após criação.');
   return {
     token,
     expiresAt,
@@ -79,54 +79,64 @@ function _buildSession(token, user, expiresAt) {
 }
 
 // ── POST /api/auth/register ───────────────────────────────────
-router.post('/register', async (req, res) => {
-  const { name, email, password } = req.body || {};
-  if (!name || String(name).trim().length < 2)
-    return res.status(400).json({ error: 'Nome deve ter ao menos 2 caracteres.' });
-  const emailClean = String(email || '').toLowerCase().trim();
-  if (!EMAIL_RE.test(emailClean))
-    return res.status(400).json({ error: 'Formato de e-mail inválido.' });
-  if (!password || password.length < 6 || password.length > 128)
-    return res.status(400).json({ error: 'Senha deve ter entre 6 e 128 caracteres.' });
+router.post('/register', async (req, res, next) => {
+  try {
+    const { name, email, password } = req.body || {};
+    if (!name || String(name).trim().length < 2)
+      return res.status(400).json({ error: 'Nome deve ter ao menos 2 caracteres.' });
+    const emailClean = String(email || '').toLowerCase().trim();
+    if (!EMAIL_RE.test(emailClean))
+      return res.status(400).json({ error: 'Formato de e-mail inválido.' });
+    if (!password || password.length < 6 || password.length > 128)
+      return res.status(400).json({ error: 'Senha deve ter entre 6 e 128 caracteres.' });
 
-  if (db.getUserByEmail(emailClean))
-    return res.status(400).json({ error: 'E-mail já cadastrado.' });
+    if (db.getUserByEmail(emailClean))
+      return res.status(400).json({ error: 'E-mail já cadastrado.' });
 
-  const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
-  db.createUser(emailClean, name.trim(), hash);
+    const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+    db.createUser(emailClean, name.trim(), hash);
 
-  const token = _token();
-  const expiresAt = Date.now() + SESSION_TTL;
-  db.createSession(token, emailClean, expiresAt);
+    const token = _token();
+    const expiresAt = Date.now() + SESSION_TTL;
+    db.createSession(token, emailClean, expiresAt);
 
-  const user = db.getUserByEmail(emailClean);
-  res.json(_buildSession(token, user, expiresAt));
+    const user = db.getUserByEmail(emailClean);
+    res.json(_buildSession(token, user, expiresAt));
+  } catch (err) {
+    console.error('[auth/register]', err.message, err.stack);
+    next(err);
+  }
 });
 
 // ── POST /api/auth/login ──────────────────────────────────────
-router.post('/login', async (req, res) => {
-  const { email, password } = req.body || {};
-  const emailClean = String(email || '').toLowerCase().trim();
-  if (!EMAIL_RE.test(emailClean))
-    return res.status(400).json({ error: 'Formato de e-mail inválido.' });
-  if (!password)
-    return res.status(400).json({ error: 'Senha obrigatória.' });
+router.post('/login', async (req, res, next) => {
+  try {
+    const { email, password } = req.body || {};
+    const emailClean = String(email || '').toLowerCase().trim();
+    if (!EMAIL_RE.test(emailClean))
+      return res.status(400).json({ error: 'Formato de e-mail inválido.' });
+    if (!password)
+      return res.status(400).json({ error: 'Senha obrigatória.' });
 
-  const user = db.getUserByEmail(emailClean);
-  if (!user)
-    return res.status(401).json({ error: 'E-mail não encontrado.', code: 'USER_NOT_FOUND' });
-  if (!user.password_hash)
-    return res.status(401).json({ error: 'Conta Google — use o botão "Entrar com Google".' });
+    const user = db.getUserByEmail(emailClean);
+    if (!user)
+      return res.status(401).json({ error: 'E-mail não encontrado.', code: 'USER_NOT_FOUND' });
+    if (!user.password_hash)
+      return res.status(401).json({ error: 'Conta Google — use o botão "Entrar com Google".' });
 
-  const ok = await bcrypt.compare(password, user.password_hash);
-  if (!ok)
-    return res.status(401).json({ error: 'Senha incorreta.' });
+    const ok = await bcrypt.compare(password, user.password_hash);
+    if (!ok)
+      return res.status(401).json({ error: 'Senha incorreta.' });
 
-  const token = _token();
-  const expiresAt = Date.now() + SESSION_TTL;
-  db.createSession(token, emailClean, expiresAt);
+    const token = _token();
+    const expiresAt = Date.now() + SESSION_TTL;
+    db.createSession(token, emailClean, expiresAt);
 
-  res.json(_buildSession(token, user, expiresAt));
+    res.json(_buildSession(token, user, expiresAt));
+  } catch (err) {
+    console.error('[auth/login]', err.message, err.stack);
+    next(err);
+  }
 });
 
 // ── POST /api/auth/logout ─────────────────────────────────────
@@ -154,39 +164,46 @@ router.get('/me', (req, res) => {
 });
 
 // ── POST /api/auth/reset-request ─────────────────────────────
-router.post('/reset-request', async (req, res) => {
-  const email = String(req.body?.email || '').toLowerCase().trim();
-  // Sempre responde 200 para não vazar se o email existe
-  res.json({ ok: true });
+router.post('/reset-request', async (req, res, next) => {
+  res.json({ ok: true }); // sempre 200 para não vazar existência do email
+  try {
+    const email = String(req.body?.email || '').toLowerCase().trim();
+    if (!EMAIL_RE.test(email)) return;
+    const user = db.getUserByEmail(email);
+    if (!user) return;
 
-  if (!EMAIL_RE.test(email)) return;
-  const user = db.getUserByEmail(email);
-  if (!user) return;
+    const token = _token();
+    db.createPasswordReset(token, email, Date.now() + RESET_TTL);
 
-  const token = _token();
-  db.createPasswordReset(token, email, Date.now() + RESET_TTL);
-
-  const base = process.env.APP_BASE_URL || 'http://localhost:3001';
-  const link = `${base}/investai/login.html?reset=${token}`;
-  await _sendResetEmail(email, link);
+    const base = process.env.APP_BASE_URL || 'http://localhost:3001';
+    const link = `${base}/investai/login.html?reset=${token}`;
+    await _sendResetEmail(email, link);
+  } catch (err) {
+    console.error('[auth/reset-request]', err.message);
+  }
 });
 
 // ── POST /api/auth/reset-password ────────────────────────────
-router.post('/reset-password', async (req, res) => {
-  const { token, password } = req.body || {};
-  if (!token) return res.status(400).json({ error: 'Token obrigatório.' });
-  if (!password || password.length < 6 || password.length > 128)
-    return res.status(400).json({ error: 'Senha deve ter entre 6 e 128 caracteres.' });
+router.post('/reset-password', async (req, res, next) => {
+  try {
+    const { token, password } = req.body || {};
+    if (!token) return res.status(400).json({ error: 'Token obrigatório.' });
+    if (!password || password.length < 6 || password.length > 128)
+      return res.status(400).json({ error: 'Senha deve ter entre 6 e 128 caracteres.' });
 
-  const reset = db.getPasswordReset(token);
-  if (!reset) return res.status(400).json({ error: 'Link inválido ou expirado.' });
+    const reset = db.getPasswordReset(token);
+    if (!reset) return res.status(400).json({ error: 'Link inválido ou expirado.' });
 
-  const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
-  db.updatePassword(reset.email, hash);
-  db.markPasswordResetUsed(token);
-  db.deleteUserSessions(reset.email);
+    const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+    db.updatePassword(reset.email, hash);
+    db.markPasswordResetUsed(token);
+    db.deleteUserSessions(reset.email);
 
-  res.json({ ok: true });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[auth/reset-password]', err.message, err.stack);
+    next(err);
+  }
 });
 
 // ── POST /api/auth/update-profile ────────────────────────────
