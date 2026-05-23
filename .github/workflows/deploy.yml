@@ -2,149 +2,158 @@ name: Deploy VPS
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
 
 jobs:
   deploy:
     runs-on: self-hosted
+    timeout-minutes: 10
 
     steps:
+      - name: Init deploy monitor
+        timeout-minutes: 1
+        run: |
+          mkdir -p /var/www/InvestAI/investai /var/www/InvestAI/logs /var/www/InvestAI/deploy-artifacts
+          cat > /tmp/investai_mark_step.sh <<'SH'
+          #!/bin/sh
+          STEP="$1"
+          STATUS="${2:-started}"
+          TS="$(date -Is)"
+          mkdir -p /var/www/InvestAI/investai /var/www/InvestAI/logs 2>/dev/null || true
+          echo "$TS step=$STEP status=$STATUS" | tee /var/www/InvestAI/investai/deploy-progress.txt >> /var/www/InvestAI/logs/deploy-progress.log
+          SH
+          chmod +x /tmp/investai_mark_step.sh
+          /tmp/investai_mark_step.sh init ok
+
       - name: Backup
+        timeout-minutes: 1
         continue-on-error: true
         run: |
+          /tmp/investai_mark_step.sh backup started
           mkdir -p /var/www/InvestAI/backups
-          tar -czf /var/www/InvestAI/backups/backup-$(date +%Y%m%d-%H%M%S).tar.gz \
-              -C /var/www/InvestAI investai/ 2>/dev/null || true
+          tar -czf /var/www/InvestAI/backups/backup-$(date +%Y%m%d-%H%M%S).tar.gz -C /var/www/InvestAI investai/ 2>/dev/null || true
           ls -t /var/www/InvestAI/backups/backup-*.tar.gz 2>/dev/null | tail -n +6 | xargs -r rm -- || true
+          /tmp/investai_mark_step.sh backup ok
 
-      - name: Atualizar codigo
+      - name: Update code
+        timeout-minutes: 2
         run: |
+          /tmp/investai_mark_step.sh update-code started
           cd /var/www/InvestAI
-          [ -f "investai/js/config.js" ] && cp investai/js/config.js /tmp/investai_config.bak || true
+          [ -f investai/js/config.js ] && cp investai/js/config.js /tmp/investai_config.bak || true
           git config --global --add safe.directory /var/www/InvestAI
-
-          # Remove objetos git corrompidos (arquivos vazios causados por fetch interrompido)
           EMPTY=$(find .git/objects -size 0 2>/dev/null | wc -l)
           if [ "$EMPTY" -gt 0 ]; then
-            echo "Removendo $EMPTY objeto(s) git corrompido(s)..."
+            echo "Removing $EMPTY empty git object(s)"
             find .git/objects -size 0 -delete 2>/dev/null || true
           fi
-
           git fetch origin main
           git reset --hard origin/main
-          [ -f "/tmp/investai_config.bak" ] && cp /tmp/investai_config.bak investai/js/config.js || true
+          [ -f /tmp/investai_config.bak ] && cp /tmp/investai_config.bak investai/js/config.js || true
           echo "Commit: $(git log -1 --format='%h %s')"
+          /tmp/investai_mark_step.sh update-code ok
 
-      - name: Atualizar env
+      - name: Update env
+        timeout-minutes: 1
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           MP_ACCESS_TOKEN: ${{ secrets.MP_ACCESS_TOKEN }}
         run: |
+          /tmp/investai_mark_step.sh update-env started
           ENV_FILE="/var/www/InvestAI/api/.env"
           TMP_ENV="/tmp/investai_env.$$"
           [ -f "$ENV_FILE" ] && grep -v "^ANTHROPIC_API_KEY=\|^MP_ACCESS_TOKEN=\|^PORT=" "$ENV_FILE" > "$TMP_ENV" 2>/dev/null || true
           [ -n "$ANTHROPIC_API_KEY" ] && echo "ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}" >> "$TMP_ENV"
-          [ -n "$MP_ACCESS_TOKEN"   ] && echo "MP_ACCESS_TOKEN=${MP_ACCESS_TOKEN}"     >> "$TMP_ENV"
+          [ -n "$MP_ACCESS_TOKEN" ] && echo "MP_ACCESS_TOKEN=${MP_ACCESS_TOKEN}" >> "$TMP_ENV"
           grep -q "^PORT=" "$TMP_ENV" 2>/dev/null || echo "PORT=3001" >> "$TMP_ENV"
           cp "$TMP_ENV" "$ENV_FILE" && chmod 600 "$ENV_FILE"
           rm -f "$TMP_ENV"
-          echo ".env atualizado"
+          /tmp/investai_mark_step.sh update-env ok
 
-      - name: Instalar dependencias
+      - name: Install dependencies
+        timeout-minutes: 3
         run: |
+          /tmp/investai_mark_step.sh dependencies started
           cd /var/www/InvestAI/api
-          # Evita recompilar better-sqlite3 (modulo nativo) em cada push.
-          # So instala se package.json ou package-lock.json mudaram.
           HASH_NOW=$(md5sum package.json package-lock.json 2>/dev/null | md5sum | cut -d' ' -f1)
           HASH_FILE="/var/www/InvestAI/.pkg_hash"
           HASH_OLD=$(cat "$HASH_FILE" 2>/dev/null || echo "")
           if [ "$HASH_NOW" != "$HASH_OLD" ]; then
-            echo "Dependencias mudaram — instalando..."
-            npm install --production --prefer-offline 2>&1 | tail -5
+            echo "Dependencies changed; installing"
+            npm install --production --prefer-offline --no-audit --no-fund
             echo "$HASH_NOW" > "$HASH_FILE"
           else
-            echo "Dependencias sem alteracao — pulando npm install"
+            echo "Dependencies unchanged; skipping npm install"
           fi
+          /tmp/investai_mark_step.sh dependencies ok
 
-      - name: Reiniciar API
+      - name: Restart API
+        timeout-minutes: 2
         run: |
+          /tmp/investai_mark_step.sh restart-api started
           cd /var/www/InvestAI/api
           mkdir -p /var/www/InvestAI/logs
-
           if pm2 describe investai-api > /dev/null 2>&1; then
             pm2 restart investai-api --update-env
           else
             pm2 start ecosystem.config.js
             pm2 save --force
           fi
-
-          # Aguarda API responder (ate 20s)
-          echo "Aguardando API iniciar..."
           for i in $(seq 1 20); do
             if curl -sf --max-time 2 http://127.0.0.1:3001/api/health > /dev/null 2>&1; then
-              echo "API online em ${i}s"
+              echo "API online in ${i}s"
               break
             fi
             sleep 1
           done
+          curl -sf --max-time 3 http://127.0.0.1:3001/api/health
+          /tmp/investai_mark_step.sh restart-api ok
 
-          STATUS=$(curl -sf --max-time 3 http://127.0.0.1:3001/api/health 2>/dev/null || echo '{"status":"offline"}')
-          echo "Health: $STATUS"
-
-      - name: Verificar banco de dados
+      - name: Check database
+        timeout-minutes: 1
         run: |
+          /tmp/investai_mark_step.sh database started
           cd /var/www/InvestAI/api
-          node -e "try { const db = require('./db'); db.getUserByEmail('x@x.com'); console.log('DB OK — SQLite'); } catch(e) { console.error('DB ERRO:', e.message); process.exit(1); }"
+          NODE_ENV=production node -e "const db = require('./db'); db.getUserByEmail('x@x.com'); console.log('DB OK SQLite')"
+          /tmp/investai_mark_step.sh database ok
 
-      - name: Configurar nginx
+      - name: Configure nginx
+        timeout-minutes: 2
         run: |
+          /tmp/investai_mark_step.sh nginx started
           bash /var/www/InvestAI/api/setup-nginx.sh
           echo "=== nginx-setup.log ==="
-          tail -40 /var/www/InvestAI/nginx-setup.log 2>/dev/null || echo "(log nao encontrado)"
+          tail -60 /var/www/InvestAI/nginx-setup.log 2>/dev/null || true
           nginx -t
+          /tmp/investai_mark_step.sh nginx ok
 
-      - name: Validar proxy nginx InvestAI
+      - name: Validate nginx proxy
+        timeout-minutes: 1
         run: |
-          echo "Validando proxy nginx local..."
+          /tmp/investai_mark_step.sh validate-proxy started
           HEALTH=$(curl -sS --max-time 5 -o /tmp/investai_health.out -w '%{http_code}' http://127.0.0.1/investai/api/health || true)
           echo "HTTP /investai/api/health: $HEALTH"
           cat /tmp/investai_health.out || true
-          if [ "$HEALTH" != "200" ]; then
-            echo "ERRO: nginx nao esta encaminhando /investai/api/health para a API"
-            exit 1
-          fi
-
-          AUTH=$(curl -sS --max-time 5 -o /tmp/investai_auth.out -w '%{http_code}' \
-            -X POST http://127.0.0.1/investai/api/auth/login \
-            -H "Content-Type: application/json" \
-            -d '{"email":"deploy-probe@investai.local","password":"123456"}' || true)
+          test "$HEALTH" = "200"
+          AUTH=$(curl -sS --max-time 5 -o /tmp/investai_auth.out -w '%{http_code}' -X POST http://127.0.0.1/investai/api/auth/login -H "Content-Type: application/json" -d '{"email":"deploy-probe@investai.local","password":"123456"}' || true)
           echo "HTTP /investai/api/auth/login: $AUTH"
           cat /tmp/investai_auth.out || true
-          if [ "$AUTH" != "401" ] && [ "$AUTH" != "200" ]; then
-            echo "ERRO: nginx nao esta encaminhando /investai/api/auth/login para a API"
-            exit 1
-          fi
+          [ "$AUTH" = "401" ] || [ "$AUTH" = "200" ]
+          /tmp/investai_mark_step.sh validate-proxy ok
 
-      - name: Verificar deploy
+      - name: Verify deploy
+        timeout-minutes: 1
         run: |
-          echo "=== Deploy concluido: $(date) ==="
-          echo "Commit: $(cd /var/www/InvestAI && git log -1 --format='%h %s' 2>/dev/null)"
+          /tmp/investai_mark_step.sh verify started
+          cd /var/www/InvestAI
+          echo "Commit: $(git log -1 --format='%h %s')"
           pm2 list 2>/dev/null | grep -E "investai|name" || true
+          curl -sf --max-time 5 http://127.0.0.1/investai/api/health
+          /tmp/investai_mark_step.sh verify ok
 
-          # Verifica DB (SQLite vs in-memory mock)
-          DB_STATUS=$(cd /var/www/InvestAI/api && node -e "
-            try { require('./db'); console.log('SQLite'); }
-            catch(e) { console.log('mock:' + e.message.slice(0,40)); }
-          " 2>/dev/null || echo 'erro')
-          echo "Banco de dados: $DB_STATUS"
-
-          # Verifica proxy nginx
-          HTTP=$(curl -sf --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1/investai/api/health 2>/dev/null || echo 'erro')
-          echo "Proxy nginx local /investai/api/health: HTTP $HTTP"
-          test "$HTTP" = "200"
-
-      - name: Publicar diagnostico do deploy
+      - name: Publish deploy diagnostics
         if: always()
+        timeout-minutes: 2
         env:
           JOB_STATUS: ${{ job.status }}
           GITHUB_RUN_ID_VALUE: ${{ github.run_id }}
@@ -153,26 +162,19 @@ jobs:
           GITHUB_REF_NAME_VALUE: ${{ github.ref_name }}
           GITHUB_REPOSITORY_VALUE: ${{ github.repository }}
         run: |
+          /tmp/investai_mark_step.sh diagnostics started || true
           APP_DIR="/var/www/InvestAI"
           WEB_DIR="$APP_DIR/investai"
-          LOG_DIR="$APP_DIR/logs"
-          mkdir -p "$WEB_DIR" "$LOG_DIR" 2>/dev/null || true
-
+          ARTIFACT_DIR="$APP_DIR/deploy-artifacts"
+          mkdir -p "$WEB_DIR" "$ARTIFACT_DIR"
           STATUS_JSON="$WEB_DIR/deploy-status.json"
           STATUS_TXT="$WEB_DIR/deploy-log.txt"
-          ARTIFACT_DIR="$APP_DIR/deploy-artifacts"
-          mkdir -p "$ARTIFACT_DIR" 2>/dev/null || true
-
-          COMMIT="$(cd "$APP_DIR" && git log -1 --format='%h %s' 2>/dev/null || echo 'unknown')"
+          COMMIT="$(cd "$APP_DIR" && git log -1 --format='%h %s' 2>/dev/null || echo unknown)"
           FULL_COMMIT="$(cd "$APP_DIR" && git rev-parse HEAD 2>/dev/null || echo '')"
-          API_HEALTH="$(curl -sS --max-time 5 -o /tmp/investai-api-health.out -w '%{http_code}' http://127.0.0.1:3001/api/health 2>/dev/null || echo 'erro')"
-          NGINX_HEALTH="$(curl -sS --max-time 5 -o /tmp/investai-nginx-health.out -w '%{http_code}' http://127.0.0.1/investai/api/health 2>/dev/null || echo 'erro')"
-          AUTH_STATUS="$(curl -sS --max-time 5 -o /tmp/investai-auth.out -w '%{http_code}' \
-            -X POST http://127.0.0.1/investai/api/auth/login \
-            -H "Content-Type: application/json" \
-            -d '{"email":"deploy-probe@investai.local","password":"123456"}' 2>/dev/null || echo 'erro')"
-          PM2_LINE=$(pm2 jlist 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const app=JSON.parse(s).find(a=>a.name==="investai-api"); console.log(app ? app.pm2_env.status + " pid=" + app.pid + " restarts=" + app.pm2_env.restart_time : "not-found")}catch(e){console.log("pm2-parse-error")}})')
-
+          API_HEALTH="$(curl -sS --max-time 5 -o /tmp/investai-api-health.out -w '%{http_code}' http://127.0.0.1:3001/api/health 2>/dev/null || echo erro)"
+          NGINX_HEALTH="$(curl -sS --max-time 5 -o /tmp/investai-nginx-health.out -w '%{http_code}' http://127.0.0.1/investai/api/health 2>/dev/null || echo erro)"
+          AUTH_STATUS="$(curl -sS --max-time 5 -o /tmp/investai-auth.out -w '%{http_code}' -X POST http://127.0.0.1/investai/api/auth/login -H "Content-Type: application/json" -d '{"email":"deploy-probe@investai.local","password":"123456"}' 2>/dev/null || echo erro)"
+          PM2_LINE=$(pm2 jlist 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const app=JSON.parse(s).find(a=>a.name==="investai-api"); console.log(app ? app.pm2_env.status + " pid=" + app.pid + " restarts=" + app.pm2_env.restart_time : "not-found")}catch(e){console.log("pm2-parse-error")}})' || echo pm2-error)
           {
             echo "InvestAI deploy diagnostic"
             echo "date=$(date -Is)"
@@ -189,11 +191,14 @@ jobs:
             echo "auth_probe_http=$AUTH_STATUS"
             echo "pm2=$PM2_LINE"
             echo ""
+            echo "=== deploy progress ==="
+            cat "$WEB_DIR/deploy-progress.txt" 2>/dev/null || true
+            echo ""
             echo "=== nginx -t ==="
             nginx -t 2>&1 || true
             echo ""
             echo "=== nginx setup tail ==="
-            tail -80 "$APP_DIR/nginx-setup.log" 2>/dev/null || true
+            tail -100 "$APP_DIR/nginx-setup.log" 2>/dev/null || true
             echo ""
             echo "=== api health body ==="
             cat /tmp/investai-api-health.out 2>/dev/null || true
@@ -204,11 +209,10 @@ jobs:
             echo "=== auth body ==="
             cat /tmp/investai-auth.out 2>/dev/null || true
           } | tee "$STATUS_TXT"
-
           export STATUS_TXT
           node - <<'NODE' > "$STATUS_JSON"
           const fs = require('fs');
-          const txt = fs.readFileSync(process.env.STATUS_TXT || '/var/www/InvestAI/investai/deploy-log.txt', 'utf8');
+          const txt = fs.readFileSync(process.env.STATUS_TXT, 'utf8');
           const get = (k) => (txt.match(new RegExp(`^${k}=(.*)$`, 'm')) || [,''])[1];
           console.log(JSON.stringify({
             generatedAt: new Date().toISOString(),
@@ -224,15 +228,17 @@ jobs:
             nginxHealthHttp: get('nginx_health_http'),
             authProbeHttp: get('auth_probe_http'),
             pm2: get('pm2'),
-            logUrlHint: '/investai/deploy-log.txt'
+            progressUrl: '/investai/deploy-progress.txt',
+            logUrl: '/investai/deploy-log.txt'
           }, null, 2));
           NODE
-
           cp "$STATUS_JSON" "$ARTIFACT_DIR/deploy-status.json" 2>/dev/null || true
           cp "$STATUS_TXT" "$ARTIFACT_DIR/deploy-log.txt" 2>/dev/null || true
+          /tmp/investai_mark_step.sh diagnostics ok || true
 
       - name: Upload deploy diagnostics
         if: always()
+        timeout-minutes: 2
         uses: actions/upload-artifact@v4
         with:
           name: investai-deploy-diagnostics
