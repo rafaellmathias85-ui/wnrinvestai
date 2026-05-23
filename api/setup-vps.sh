@@ -4,9 +4,7 @@
 # Execute UMA VEZ como root:
 #   sudo bash /var/www/InvestAI/api/setup-vps.sh
 #
-# Apos este script, todos os deploys via GitHub Actions serao autonomos:
-#   - nginx configurado automaticamente a cada push
-#   - Express gerenciado pelo PM2 (inicia no boot)
+# Apos este script, todos os deploys via GitHub Actions serao autonomos.
 
 set -uo pipefail
 
@@ -14,8 +12,8 @@ ACTIONS_DIR="/var/www/InvestAI"
 RUNNER_USER="${1:-deploy}"
 
 echo "=== InvestAI VPS — Configuracao Inicial ==="
-echo "Diretorio do projeto : $ACTIONS_DIR"
-echo "Usuario do runner    : $RUNNER_USER"
+echo "Diretorio : $ACTIONS_DIR"
+echo "Runner    : $RUNNER_USER"
 echo ""
 
 if [ "$EUID" -ne 0 ]; then
@@ -23,16 +21,16 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-# ── 1. Cria estrutura de diretorios ──────────────────────────
+# ── 1. Diretorios ─────────────────────────────────────────────
 mkdir -p "$ACTIONS_DIR/logs" "$ACTIONS_DIR/backups"
 chown "$RUNNER_USER:$RUNNER_USER" "$ACTIONS_DIR/logs" "$ACTIONS_DIR/backups" 2>/dev/null || true
-echo "OK: diretorios de logs e backups criados"
+echo "OK: diretorios de logs e backups"
 
-# ── 2. Permissao de escrita no diretorio de snippets nginx ───
+# ── 2. Permissao no diretorio de snippets nginx ───────────────
 mkdir -p /etc/nginx/snippets
 chown root:"$RUNNER_USER" /etc/nginx/snippets
 chmod 775 /etc/nginx/snippets
-echo "OK: permissao em /etc/nginx/snippets (grupo $RUNNER_USER pode escrever)"
+echo "OK: /etc/nginx/snippets gravavel pelo grupo $RUNNER_USER"
 
 # ── 3. Sudoers: nginx sem senha para o runner ─────────────────
 NGINX_BIN=$(which nginx 2>/dev/null || echo "/usr/sbin/nginx")
@@ -41,30 +39,85 @@ cat > "$SUDOERS_FILE" << SUDOEOF
 $RUNNER_USER ALL=(ALL) NOPASSWD: $NGINX_BIN
 SUDOEOF
 chmod 440 "$SUDOERS_FILE"
-# Valida apenas nosso arquivo (visudo -c valida todos e falha por arquivos de terceiros)
 if visudo -cf "$SUDOERS_FILE" 2>&1; then
-    echo "OK: sudoers configurado — $RUNNER_USER pode executar nginx sem senha"
+    echo "OK: sudoers — $RUNNER_USER pode executar nginx sem senha"
 else
-    echo "AVISO: arquivo criado mas visudo reportou erro — verifique $SUDOERS_FILE"
+    echo "AVISO: visudo reportou erro — verifique $SUDOERS_FILE"
 fi
 
-# ── 4. Configura nginx agora (sem esperar o proximo push) ─────
+# ── 4. Configura nginx (insere include no server block) ───────
 echo ""
 echo "Configurando nginx..."
 bash "$ACTIONS_DIR/api/setup-nginx.sh"
+NGINX_RC=$?
 
-# Garante que o snippet seja gravavel pelo runner em deploys futuros
+# ── 5. Permissao no arquivo de config nginx ───────────────────
+# Torna o arquivo de config do site gravavel pelo runner para que
+# deploys futuros possam atualizar o include de forma autonoma.
+TARGET=""
+for f in /etc/nginx/sites-enabled/* /etc/nginx/conf.d/*; do
+    [ -f "$f" ] || continue
+    if grep -qE "wnrtecnologia|InvestAI|investai" "$f" 2>/dev/null; then
+        TARGET="$f"
+        break
+    fi
+done
+
+if [ -n "$TARGET" ]; then
+    chown root:"$RUNNER_USER" "$TARGET"
+    chmod 664 "$TARGET"
+    echo "OK: $TARGET — grupo $RUNNER_USER pode modificar"
+else
+    echo "AVISO: arquivo de config nginx nao encontrado para ajustar permissoes"
+fi
+
+# Permissao no snippet (caso nao tenha sido criado ainda)
 SNIPPET="/etc/nginx/snippets/investai-api.conf"
 if [ -f "$SNIPPET" ]; then
     chown root:"$RUNNER_USER" "$SNIPPET"
     chmod 664 "$SNIPPET"
-    echo "OK: snippet com permissao de escrita para $RUNNER_USER"
+    echo "OK: $SNIPPET — grupo $RUNNER_USER pode modificar"
 fi
 
+# ── 6. Cria usuario admin no banco de dados ───────────────────
 echo ""
-echo "=== Configuracao concluida! ==="
-echo "O sistema e agora 100% autonomo via GitHub Actions."
-echo "Proximos pushes para main irao:"
-echo "  - Atualizar o codigo"
-echo "  - Reiniciar o Express/PM2"
-echo "  - Configurar/recarregar nginx automaticamente"
+echo "Verificando banco de dados..."
+API_DIR="$ACTIONS_DIR/api"
+
+if [ -f "$API_DIR/server.js" ] && command -v node >/dev/null 2>&1; then
+    node << 'JSEOF'
+const path = require('path');
+require('dotenv').config({ path: path.join('/var/www/InvestAI/api', '.env') });
+try {
+  const db      = require('/var/www/InvestAI/api/db');
+  const bcrypt  = require('/var/www/InvestAI/api/node_modules/bcryptjs');
+  const email   = 'rafaellmathias85@gmail.com';
+  const name    = 'Rafael Mathias';
+  const pass    = 'InvestAI@2026';
+
+  if (!db.getUserByEmail(email)) {
+    const hash = bcrypt.hashSync(pass, 10);
+    db.createUser(email, name, hash);
+    console.log('Admin criado: ' + email);
+  } else {
+    console.log('Admin ja existe: ' + email);
+  }
+} catch(e) {
+  console.log('AVISO DB: ' + e.message);
+}
+JSEOF
+else
+    echo "AVISO: node ou server.js nao encontrado — pule a criacao do admin"
+fi
+
+# ── Resumo ─────────────────────────────────────────────────────
+echo ""
+echo "=== Configuracao concluida ==="
+if [ $NGINX_RC -eq 0 ]; then
+    echo "  nginx  : OK (proxy /investai/api/ ativo)"
+else
+    echo "  nginx  : AVISO — proxy pode nao estar ativo (verifique nginx-setup.log)"
+fi
+echo "  runner : $RUNNER_USER"
+echo ""
+echo "Proximos pushes para main serao 100% autonomos."

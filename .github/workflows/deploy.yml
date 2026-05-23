@@ -91,6 +91,11 @@ jobs:
           STATUS=$(curl -sf --max-time 3 http://127.0.0.1:3001/api/health 2>/dev/null || echo '{"status":"offline"}')
           echo "Health: $STATUS"
 
+      - name: Verificar banco de dados
+        run: |
+          cd /var/www/InvestAI/api
+          node -e "try { const db = require('./db'); db.getUserByEmail('x@x.com'); console.log('DB OK — SQLite'); } catch(e) { console.error('DB ERRO:', e.message); process.exit(1); }"
+
       - name: Configurar nginx
         continue-on-error: true
         run: |
@@ -103,6 +108,15 @@ jobs:
           echo "=== Deploy concluido: $(date) ==="
           echo "Commit: $(cd /var/www/InvestAI && git log -1 --format='%h %s' 2>/dev/null)"
           pm2 list 2>/dev/null | grep -E "investai|name" || true
+
+          # Verifica DB (SQLite vs in-memory mock)
+          DB_STATUS=$(cd /var/www/InvestAI/api && node -e "
+            try { require('./db'); console.log('SQLite'); }
+            catch(e) { console.log('mock:' + e.message.slice(0,40)); }
+          " 2>/dev/null || echo 'erro')
+          echo "Banco de dados: $DB_STATUS"
+
+          # Verifica proxy nginx
           HTTP=$(curl -sf --max-time 5 -o /dev/null -w '%{http_code}' https://wnrtecnologia.com.br/investai/api/health 2>/dev/null || echo 'erro')
           echo "Proxy nginx /investai/api/health: HTTP $HTTP"
           if [ "$HTTP" = "200" ]; then

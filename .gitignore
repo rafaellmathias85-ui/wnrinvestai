@@ -29,3 +29,8 @@ npm-debug.log*
 
 # Config local com API keys (use config.example.js como base)
 investai/js/config.js
+
+# Banco de dados SQLite (gerado em runtime no VPS)
+api/data.sqlite
+api/data.sqlite-shm
+api/data.sqlite-wal
