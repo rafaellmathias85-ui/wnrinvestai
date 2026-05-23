@@ -95,8 +95,8 @@ jobs:
           echo "=== Deploy concluido: $(date) ==="
           echo "Commit: $(cd /var/www/InvestAI && git log -1 --format='%h %s' 2>/dev/null)"
           pm2 list 2>/dev/null | grep -E "investai|name" || true
-          HTTP=$(curl -sf --max-time 5 -o /dev/null -w '%{http_code}' https://wnrtecnologia.com.br/api/health 2>/dev/null || echo 'erro')
-          echo "Proxy nginx /api/health: HTTP $HTTP"
+          HTTP=$(curl -sf --max-time 5 -o /dev/null -w '%{http_code}' https://wnrtecnologia.com.br/investai/api/health 2>/dev/null || echo 'erro')
+          echo "Proxy nginx /investai/api/health: HTTP $HTTP"
           if [ "$HTTP" = "200" ]; then
             echo "SUCESSO: proxy nginx funcionando"
           else

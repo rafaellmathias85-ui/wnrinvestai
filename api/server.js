@@ -124,7 +124,7 @@ app.post('/api/checkout', checkoutLimiter, async (req, res) => {
           pending: 'https://wnrtecnologia.com.br/investai/app',
         },
         auto_return: 'approved',
-        notification_url: 'https://wnrtecnologia.com.br/api/webhook',
+        notification_url: 'https://wnrtecnologia.com.br/investai/api/webhook',
         metadata: { email: cleanEmail, plan, billing, days },
       },
     });

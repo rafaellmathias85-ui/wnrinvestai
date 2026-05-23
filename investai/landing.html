@@ -806,7 +806,7 @@
       btn.textContent = 'Aguarde...';
 
       try {
-        const r = await fetch('/api/checkout', {
+        const r = await fetch('/investai/api/checkout', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, plan, billing }),
@@ -854,7 +854,7 @@
       if (btn) { btn.disabled = true; btn.textContent = 'Aguarde...'; }
 
       try {
-        const r = await fetch('/api/checkout', {
+        const r = await fetch('/investai/api/checkout', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, plan: intent.plan, billing: intent.billing }),

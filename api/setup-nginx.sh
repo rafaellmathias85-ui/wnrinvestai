@@ -46,9 +46,10 @@ fi
 TMPSNIPPET=$(mktemp /tmp/investai-snippet.XXXXXX)
 cat > "$TMPSNIPPET" << 'NGINXEOF'
     # InvestAI API — porta 3001
-    # Paths especificos: prioridade sobre qualquer location /api/ generica existente
-    location /api/auth/ {
-        proxy_pass         http://127.0.0.1:3001;
+    # Prefixo /investai/api/ — completamente isolado de /api/ (WNR Audit/MKT)
+    # proxy_pass com URI reescreve o caminho: /investai/api/X -> /api/X no Express
+    location /investai/api/auth/ {
+        proxy_pass         http://127.0.0.1:3001/api/auth/;
         proxy_http_version 1.1;
         proxy_set_header   Host              $host;
         proxy_set_header   X-Real-IP         $remote_addr;
@@ -56,12 +57,12 @@ cat > "$TMPSNIPPET" << 'NGINXEOF'
         proxy_set_header   X-Forwarded-Proto $scheme;
         client_max_body_size 64k;
     }
-    location /api/ai      { proxy_pass http://127.0.0.1:3001; proxy_read_timeout 35s; }
-    location /api/health  { proxy_pass http://127.0.0.1:3001; }
-    location /api/plan    { proxy_pass http://127.0.0.1:3001; }
-    location /api/checkout{ proxy_pass http://127.0.0.1:3001; client_max_body_size 64k; }
-    location /api/webhook { proxy_pass http://127.0.0.1:3001; }
-    location /api/b3quote { proxy_pass http://127.0.0.1:3001; }
+    location /investai/api/ai       { proxy_pass http://127.0.0.1:3001/api/ai;       proxy_read_timeout 35s; }
+    location /investai/api/health   { proxy_pass http://127.0.0.1:3001/api/health;   }
+    location /investai/api/plan     { proxy_pass http://127.0.0.1:3001/api/plan;     }
+    location /investai/api/checkout { proxy_pass http://127.0.0.1:3001/api/checkout; client_max_body_size 64k; }
+    location /investai/api/webhook  { proxy_pass http://127.0.0.1:3001/api/webhook;  }
+    location /investai/api/b3quote  { proxy_pass http://127.0.0.1:3001/api/b3quote;  }
 NGINXEOF
 
 if cp "$TMPSNIPPET" "$SNIPPET" 2>/dev/null; then
@@ -80,8 +81,8 @@ log "nginx -T: $DUMP_LINES linhas"
 head -200 /var/www/InvestAI/nginx-dump.txt >> "$DEBUG_WEB" 2>/dev/null || true
 
 # ── 3. Verifica se include ja esta ativo ─────────────────────
-if $NGINX -T 2>/dev/null | grep -q "location /api/auth/"; then
-    log "Proxy InvestAI /api/auth/ ja ativo — apenas recarregando nginx"
+if $NGINX -T 2>/dev/null | grep -q "location /investai/api/auth/"; then
+    log "Proxy InvestAI /investai/api/auth/ ja ativo — apenas recarregando nginx"
     $NGINX -t 2>&1 | tee -a "$LOG"
     $NGINX -s reload && log "Nginx recarregado OK" || log "ERRO ao recarregar nginx"
     exit 0
@@ -229,7 +230,7 @@ log "Testando configuracao nginx..."
 if $NGINX -t 2>&1 | tee -a "$LOG"; then
     $NGINX -s reload
     log "Nginx recarregado com sucesso"
-    log "Verificacao: $($NGINX -T 2>/dev/null | grep 'location /api/auth' || echo 'NAO ENCONTRADO')"
+    log "Verificacao: $($NGINX -T 2>/dev/null | grep 'location /investai/api/auth' || echo 'NAO ENCONTRADO')"
 else
     log "ERRO: nginx config invalido apos modificacao"
     tail -20 "$($NGINX -T 2>/dev/null | grep -o '# configuration file [^:]*' | grep 'investai-api' | head -1 | cut -d' ' -f4)" 2>/dev/null | tee -a "$LOG" || true
