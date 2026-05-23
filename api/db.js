@@ -104,8 +104,8 @@ try {
       db.prepare('UPDATE password_resets SET used=1 WHERE token=?').run(token);
     },
   };
-} catch (_) {
-  console.warn('[db] better-sqlite3 indisponível — usando mock em memória (somente dev)');
+} catch (e) {
+  console.warn('[db] better-sqlite3 indisponível — usando mock em memória (somente dev):', e.message);
   const _plans = new Map();
   const _users = new Map();
   const _sessions = new Map();

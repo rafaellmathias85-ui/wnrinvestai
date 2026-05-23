@@ -118,8 +118,8 @@ const Auth = {
           // Senha local bate — auto-registra no backend
           try {
             data = await this._api('POST', '/register', { name: localUser.name, email: key, password });
-          } catch (_) {
-            // Se o registro falhou (email já existe de outra forma), deixa cair no erro original
+          } catch (migrErr) {
+            console.warn('[auth] migração automática falhou:', migrErr.message);
             this._recordFail(key);
             throw e;
           }
@@ -160,8 +160,8 @@ const Auth = {
       }
       localStorage.setItem(this.USERS_KEY, JSON.stringify(users));
       return true;
-    } catch (_) {
-      // Sessão inválida no servidor — limpa local
+    } catch (e) {
+      console.warn('[auth] validateSession falhou:', e.message);
       localStorage.removeItem(this.SESSION_KEY);
       return false;
     }

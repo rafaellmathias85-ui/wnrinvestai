@@ -41,19 +41,15 @@ const API = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: userMessage, system: fullSystem, maxTokens }),
       });
-      if (r.ok) {
-        const d = await r.json();
-        if (d.text) return d.text;
-      }
-      // Se o backend retornar erro de configuração, deixa cair no fallback
-      if (r.status !== 503) {
-        const d = await r.json().catch(() => ({}));
-        throw new Error(d.error || `HTTP ${r.status}`);
-      }
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) return d.text ?? '';
+      // 503 = backend sem chave configurada → cai no fallback direto
+      if (r.status !== 503) throw new Error(d.error || `HTTP ${r.status}`);
     } catch (e) {
-      // Conexão recusada ou status 503 → tenta fallback direto
-      if (!e.message.includes('fetch') && !e.message.includes('503') && !e.message.includes('Failed'))
-        throw e;
+      // Erro de rede ou 503 → tenta fallback direto; outros erros relança
+      const isNetwork = e instanceof TypeError;
+      const is503     = e.message?.includes('503') || e.message?.includes('não configurado');
+      if (!isNetwork && !is503) throw e;
     }
 
     // ── Fallback: chamada direta (dev local sem backend) ──────────

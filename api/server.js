@@ -243,7 +243,7 @@ app.get('/api/b3quote', async (req, res) => {
           }
         });
       }
-    } catch (_) { /* retorna o que estiver em cache mesmo que Brapi falhe */ }
+    } catch (e) { log('warn', 'b3quote_brapi_fail', { msg: e.message }); }
   }
 
   res.json(result);

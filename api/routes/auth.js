@@ -70,10 +70,13 @@ function _buildSession(token, user, expiresAt) {
     token,
     expiresAt,
     user: {
-      id:     user.email,
-      name:   user.name,
-      email:  user.email,
-      avatar: user.avatar || null,
+      id:      user.email,
+      name:    user.name,
+      email:   user.email,
+      avatar:  user.avatar  || null,
+      plan:    user.plan    || 'free',
+      planExp: user.plan_exp || null,
+      profile: (() => { try { return user.profile ? JSON.parse(user.profile) : null; } catch { return null; } })(),
     },
   };
 }
