@@ -111,85 +111,108 @@ def log(msg):
         except Exception:
             pass
 
-# Roda nginx -T (tenta sudo se retornar vazio)
+snippet  = '/etc/nginx/snippets/investai-api.conf'
+keywords = ['wnrtecnologia', '/var/www/InvestAI', 'investai']
+CONF_DIRS = ['/etc/nginx/sites-enabled', '/etc/nginx/conf.d']
+
+# ── Passo 1: remove include de qualquer lugar antes de rodar nginx -T ──
+# Se o include esta em posicao errada (fora do server block), nginx -T falha
+# completamente e o script nao consegue encontrar os arquivos de config.
+# Limpando primeiro, nginx -T volta a funcionar.
+def read_file(path):
+    try:
+        return open(path).read()
+    except Exception:
+        try:
+            return subprocess.run(['sudo','cat',path], capture_output=True, text=True).stdout
+        except Exception:
+            return ''
+
+def write_file(path, content):
+    try:
+        with open(path, 'w') as f: f.write(content)
+        return True
+    except PermissionError:
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.nginx', delete=False) as tf:
+            tf.write(content); tmp = tf.name
+        r = subprocess.run(['sudo','cp',tmp,path], capture_output=True, text=True)
+        os.unlink(tmp)
+        return r.returncode == 0
+
+def list_conf_files(dirs):
+    files = []
+    for d in dirs:
+        if not os.path.isdir(d): continue
+        for f in os.listdir(d):
+            fp = os.path.join(d, f)
+            if os.path.exists(fp): files.append(fp)
+    return files
+
+for cf in list_conf_files(CONF_DIRS):
+    content = read_file(cf)
+    if snippet in content:
+        cleaned = '\n'.join(l for l in content.split('\n') if snippet not in l)
+        if write_file(cf, cleaned):
+            log(f"Include removido de {cf} (limpeza pre-nginx-T)")
+        else:
+            log(f"AVISO: nao conseguiu limpar {cf}")
+
+# ── Passo 2: nginx -T com fallback para scan de diretorios ────────────
 result = subprocess.run(['nginx', '-T'], capture_output=True, text=True)
 full = result.stdout
 if not full.strip():
     result = subprocess.run(['sudo', 'nginx', '-T'], capture_output=True, text=True)
     full = result.stdout
-    log("nginx -T sem saida, tentou com sudo")
+    if full.strip(): log("nginx -T funcionou com sudo")
 
-config_files = re.findall(r'# configuration file (.+?):', full)
-log(f"Arquivos nginx encontrados ({len(config_files)}): {config_files}")
+# Combina arquivos do nginx -T com scan direto de diretorios
+config_files = re.findall(r'# configuration file (.+?):', full) if full.strip() else []
+for cf in list_conf_files(CONF_DIRS):
+    if cf not in config_files: config_files.append(cf)
+log(f"Arquivos nginx ({len(config_files)}): {config_files}")
 
-snippet = '/etc/nginx/snippets/investai-api.conf'
-keywords = ['wnrtecnologia', '/var/www/InvestAI', 'investai']
+# ── Passo 3: encontra arquivo alvo (tem site keywords + ssl) ──────────
 target = None
-
 for ssl_required in [True, False]:
     for cf in config_files:
-        try:
-            content = open(cf).read()
-        except PermissionError:
-            try:
-                r = subprocess.run(['sudo', 'cat', cf], capture_output=True, text=True)
-                content = r.stdout
-            except Exception as e2:
-                log(f"  erro de permissao ao ler {cf}: {e2}")
-                continue
-        except Exception as e:
-            log(f"  erro ao ler {cf}: {e}")
-            continue
+        content = read_file(cf)
+        if not content: continue
         has_site = any(k in content for k in keywords)
         has_ssl  = ('443' in content or 'ssl_certificate' in content)
         log(f"  {cf}: has_site={has_site}, has_ssl={has_ssl}")
         if has_site and (not ssl_required or has_ssl):
             target = cf
-            log(f"Arquivo alvo encontrado: {cf} (ssl={has_ssl})")
+            log(f"Arquivo alvo: {cf} (ssl={has_ssl})")
             break
-    if target:
-        break
+    if target: break
 
 if not target:
     log("ERRO: nenhum arquivo nginx adequado encontrado")
-    log(f"Primeiras 3000 chars do nginx -T:\n{full[:3000]}")
     sys.exit(1)
 
-try:
-    content = open(target).read()
-except PermissionError:
-    r = subprocess.run(['sudo', 'cat', target], capture_output=True, text=True)
-    content = r.stdout
-    log("Arquivo lido via sudo cat")
+# ── Passo 4: brace-counting — encontra ultimo server block ────────────
+content = read_file(target)
+lines   = content.split('\n')
+log(f"Arquivo {target}: {len(lines)} linhas")
 
-lines = content.split('\n')
-
-# Remove include ja existente (pode estar em posicao errada)
-if snippet in content:
-    before = len(lines)
-    lines = [l for l in lines if snippet not in l]
-    log(f"Include existente removido ({before - len(lines)} linha(s)) para reinserção correta")
-
-log(f"Total de linhas no arquivo: {len(lines)}")
-
-# Brace-counting para encontrar o ultimo server block ao nivel 0
-# - pula linhas vazias e comentarios
-# - so atualiza last_server_close quando um } realmente fecha o bloco
 brace_depth = 0
 last_server_open = -1
 last_server_close = -1
 
 for i, line in enumerate(lines):
     stripped = line.strip()
-    if not stripped or stripped.startswith('#'):
-        continue
+    if not stripped or stripped.startswith('#'): continue
     if re.match(r'^server\s*\{', stripped) and brace_depth == 0:
         last_server_open = i
     brace_depth += stripped.count('{') - stripped.count('}')
+    # so marca fechamento quando um } realmente trouxe depth a zero
     if brace_depth == 0 and last_server_open >= 0 and '}' in stripped:
         last_server_close = i
 
-log(f"Ultimo server block: abertura linha {last_server_open}, fechamento linha {last_server_close}")
+log(f"Ultimo server block: open={last_server_open}, close={last_server_close}")
+if last_server_close >= 0:
+    log(f"Linha no fechamento: {repr(lines[last_server_close])}")
 
 if last_server_close < 0:
     idx = content.rfind('}')
@@ -199,32 +222,14 @@ else:
     lines.insert(last_server_close, f'    include {snippet};')
     new_content = '\n'.join(lines)
     log(f"Include inserido antes da linha {last_server_close}")
+    for j in range(max(0, last_server_close-1), min(len(lines), last_server_close+3)):
+        log(f"  [{j}] {lines[j]}")
 
-# Escreve o arquivo (direto como root, ou sudo cp como fallback)
-write_ok = False
-try:
-    with open(target, 'w') as f:
-        f.write(new_content)
-    log(f"Arquivo escrito diretamente: {target}")
-    write_ok = True
-except PermissionError:
-    import tempfile
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.nginx', delete=False) as tf:
-        tf.write(new_content)
-        tmp = tf.name
-    r = subprocess.run(['sudo', 'cp', tmp, target], capture_output=True, text=True)
-    os.unlink(tmp)
-    if r.returncode == 0:
-        log(f"Arquivo escrito via sudo cp: {target}")
-        write_ok = True
-    else:
-        log(f"ERRO ao escrever via sudo cp: {r.stderr.strip()}")
-        log("SOLUCAO: execute 'sudo bash /var/www/InvestAI/api/setup-vps.sh' no VPS")
-
-if not write_ok:
+if not write_file(target, new_content):
+    log("ERRO: nao foi possivel escrever o arquivo — execute como root")
     sys.exit(1)
 
-log(f"Configuracao concluida. Include adicionado em {target}")
+log(f"OK: include adicionado em {target}")
 PYEOF
 
 RC=$?
