@@ -1,6 +1,6 @@
 #!/bin/bash
 # setup-nginx.sh — Configura proxy /api/ no nginx para o InvestAI.
-# Chamado pelo deploy.yml a cada push.
+# Chamado pelo deploy.yml a cada push (user deploy) e pelo setup-vps.sh (root).
 
 SNIPPET="/etc/nginx/snippets/investai-api.conf"
 LOG="/var/www/InvestAI/nginx-setup.log"
@@ -9,7 +9,7 @@ DEBUG_WEB="/var/www/InvestAI/investai/nginx-debug.txt"
 log() {
     local msg="$1"
     echo "$msg" | tee -a "$LOG"
-    echo "$msg" >> "$DEBUG_WEB" 2>/dev/null
+    echo "$msg" >> "$DEBUG_WEB" 2>/dev/null || true
 }
 
 # Limpa logs anteriores
@@ -19,32 +19,32 @@ log() {
 log "=== setup-nginx.sh iniciado em $(date) ==="
 log "Usuario: $(whoami) | EUID=$EUID | PATH=$PATH"
 
-# ── Detecta se pode usar sudo para nginx ──────────────────────
-SUDO=""
+# ── Comando nginx: root usa direto, outros usam sudo ─────────
 NGINX_BIN=$(which nginx 2>/dev/null || echo "/usr/sbin/nginx")
-if [ "$EUID" -ne 0 ]; then
-    if sudo -n "$NGINX_BIN" -v 2>/dev/null; then
-        SUDO="sudo"
-        log "Modo: sudo nginx disponivel"
-    elif sudo -n true 2>/dev/null; then
-        SUDO="sudo"
-        log "Modo: sudo total disponivel"
-    else
-        log "AVISO: sem privilegios nginx (rode setup-vps.sh como root para corrigir)"
-    fi
-else
+if [ "$EUID" -eq 0 ]; then
+    NGINX="$NGINX_BIN"
     log "Modo: root"
+elif sudo -n "$NGINX_BIN" -v 2>/dev/null; then
+    NGINX="sudo $NGINX_BIN"
+    log "Modo: sudo nginx disponivel"
+else
+    NGINX="$NGINX_BIN"
+    log "AVISO: sem privilegios nginx — operacoes podem falhar (rode setup-vps.sh como root)"
 fi
 
-# ── 1. Cria snippet com location /api/ ───────────────────────
-if $SUDO mkdir -p /etc/nginx/snippets 2>&1 | tee -a "$LOG"; then
+# ── 1. Garante diretorio de snippets ─────────────────────────
+mkdir -p /etc/nginx/snippets 2>/dev/null || true
+if [ -d /etc/nginx/snippets ]; then
     log "OK: diretorio /etc/nginx/snippets existe"
 else
-    log "ERRO: nao foi possivel criar /etc/nginx/snippets"
+    log "ERRO: /etc/nginx/snippets nao encontrado — execute setup-vps.sh como root primeiro"
 fi
 
-# Usa tee para escrita privilegiada se necessario
-$SUDO tee "$SNIPPET" > /dev/null << 'NGINXEOF'
+# ── 2. Escreve snippet via arquivo temporario ─────────────────
+# Usa cat + heredoc (previne expansao de variaveis nginx como $host, $remote_addr)
+# depois copia para o destino — nao requer sudo (deploy tem permissao de grupo 664)
+TMPSNIPPET=$(mktemp /tmp/investai-snippet.XXXXXX)
+cat > "$TMPSNIPPET" << 'NGINXEOF'
     # InvestAI API — porta 3001
     # Paths especificos: prioridade sobre qualquer location /api/ generica existente
     location /api/auth/ {
@@ -63,38 +63,38 @@ $SUDO tee "$SNIPPET" > /dev/null << 'NGINXEOF'
     location /api/webhook { proxy_pass http://127.0.0.1:3001; }
     location /api/b3quote { proxy_pass http://127.0.0.1:3001; }
 NGINXEOF
-SNIPPET_RC=$?
 
-if [ $SNIPPET_RC -eq 0 ] && $SUDO test -f "$SNIPPET"; then
-    log "Snippet escrito com sucesso: $SNIPPET"
+if cp "$TMPSNIPPET" "$SNIPPET" 2>/dev/null; then
+    log "Snippet escrito: $SNIPPET"
+elif [ "$EUID" -eq 0 ]; then
+    log "ERRO: falha inesperada ao escrever snippet como root"
 else
-    log "ERRO: falha ao escrever snippet (rc=$SNIPPET_RC)"
+    log "AVISO: sem permissao para escrever snippet — execute setup-vps.sh como root para corrigir"
 fi
+rm -f "$TMPSNIPPET"
 
-# ── 2. Salva config atual para debug ─────────────────────────
-$SUDO nginx -T 2>/dev/null > /var/www/InvestAI/nginx-dump.txt || true
+# ── 2b. Salva dump nginx para debug ──────────────────────────
+$NGINX -T 2>/dev/null > /var/www/InvestAI/nginx-dump.txt || true
 DUMP_LINES=$(wc -l < /var/www/InvestAI/nginx-dump.txt 2>/dev/null || echo "0")
 log "nginx -T: $DUMP_LINES linhas"
-
-# Copia dump para debug web (primeiros 200 linhas para nao encher)
 head -200 /var/www/InvestAI/nginx-dump.txt >> "$DEBUG_WEB" 2>/dev/null || true
 
-# ── 3. Verifica se ja esta configurado ───────────────────────
-if $SUDO nginx -T 2>/dev/null | grep -q "location /api/auth/"; then
+# ── 3. Verifica se include ja esta ativo ─────────────────────
+if $NGINX -T 2>/dev/null | grep -q "location /api/auth/"; then
     log "Proxy InvestAI /api/auth/ ja ativo — apenas recarregando nginx"
-    $SUDO nginx -t 2>&1 | tee -a "$LOG"
-    $SUDO nginx -s reload && log "Nginx recarregado OK" || log "ERRO ao recarregar nginx"
+    $NGINX -t 2>&1 | tee -a "$LOG"
+    $NGINX -s reload && log "Nginx recarregado OK" || log "ERRO ao recarregar nginx"
     exit 0
 fi
 
-log "Proxy InvestAI NAO encontrado — iniciando configuracao automatica"
+log "Proxy InvestAI NAO encontrado — iniciando configuracao automatica (requer root)"
 
-# ── 4. Encontra e modifica o config correto via Python ───
+# ── 4. Insere include no config nginx via Python (funciona como root) ──
 python3 << 'PYEOF'
 import subprocess, re, os, sys
 
-LOG      = "/var/www/InvestAI/nginx-setup.log"
-WEB_LOG  = "/var/www/InvestAI/investai/nginx-debug.txt"
+LOG     = "/var/www/InvestAI/nginx-setup.log"
+WEB_LOG = "/var/www/InvestAI/investai/nginx-debug.txt"
 
 def log(msg):
     print(msg)
@@ -105,7 +105,7 @@ def log(msg):
         except Exception:
             pass
 
-# Roda nginx -T (tenta sudo se nginx nao retornar nada sem ele)
+# Roda nginx -T (tenta sudo se retornar vazio)
 result = subprocess.run(['nginx', '-T'], capture_output=True, text=True)
 full = result.stdout
 if not full.strip():
@@ -113,13 +113,10 @@ if not full.strip():
     full = result.stdout
     log("nginx -T sem saida, tentou com sudo")
 
-# Extrai lista de arquivos de config
 config_files = re.findall(r'# configuration file (.+?):', full)
 log(f"Arquivos nginx encontrados ({len(config_files)}): {config_files}")
 
 snippet = '/etc/nginx/snippets/investai-api.conf'
-
-# Prioridade: arquivo com ssl/443 + referencia ao site
 keywords = ['wnrtecnologia', '/var/www/InvestAI', 'investai']
 target = None
 
@@ -152,7 +149,6 @@ if not target:
     log(f"Primeiras 3000 chars do nginx -T:\n{full[:3000]}")
     sys.exit(1)
 
-# Le o conteudo do arquivo (possivelmente via sudo)
 try:
     content = open(target).read()
 except PermissionError:
@@ -176,14 +172,11 @@ for i, line in enumerate(lines):
     stripped = line.strip()
     if stripped.startswith('#'):
         continue
-    # Detecta abertura de server block no nivel 0
     if re.match(r'^server\s*\{', stripped) and brace_depth == 0:
         last_server_open = i
-    # Contagem de chaves (simples, ignora strings/comentarios)
     brace_depth += stripped.count('{') - stripped.count('}')
     if brace_depth == 0 and last_server_open >= 0:
         last_server_close = i
-        # Nao break — queremos o ULTIMO server block
 
 log(f"Ultimo server block: abertura linha {last_server_open}, fechamento linha {last_server_close}")
 
@@ -196,7 +189,7 @@ else:
     new_content = '\n'.join(lines)
     log(f"Include inserido antes da linha {last_server_close}")
 
-# Escreve o arquivo (tenta direto, depois via sudo tee)
+# Escreve o arquivo (direto como root, ou sudo cp como fallback)
 write_ok = False
 try:
     with open(target, 'w') as f:
@@ -214,7 +207,8 @@ except PermissionError:
         log(f"Arquivo escrito via sudo cp: {target}")
         write_ok = True
     else:
-        log(f"ERRO ao escrever via sudo cp: {r.stderr}")
+        log(f"ERRO ao escrever via sudo cp: {r.stderr.strip()}")
+        log("SOLUCAO: execute 'sudo bash /var/www/InvestAI/api/setup-vps.sh' no VPS")
 
 if not write_ok:
     sys.exit(1)
@@ -224,18 +218,20 @@ PYEOF
 
 RC=$?
 if [ $RC -ne 0 ]; then
-    log "Python script falhou com codigo $RC"
+    log "Configuracao nginx requer root — execute: sudo bash /var/www/InvestAI/api/setup-vps.sh"
+    # Nao faz exit 1: snippet foi atualizado, apenas o include nao foi inserido ainda
+    # O deploy.yml tem continue-on-error=true para este step
     exit 1
 fi
 
 # ── 5. Testa e recarrega nginx ────────────────────────────────
 log "Testando configuracao nginx..."
-if $SUDO nginx -t 2>&1 | tee -a "$LOG"; then
-    $SUDO nginx -s reload
+if $NGINX -t 2>&1 | tee -a "$LOG"; then
+    $NGINX -s reload
     log "Nginx recarregado com sucesso"
-    log "Verificacao: $($SUDO nginx -T 2>/dev/null | grep 'location /api/auth' || echo 'NAO ENCONTRADO')"
+    log "Verificacao: $($NGINX -T 2>/dev/null | grep 'location /api/auth' || echo 'NAO ENCONTRADO')"
 else
     log "ERRO: nginx config invalido apos modificacao"
-    $SUDO tail -20 "$($SUDO grep -rl 'investai-api.conf' /etc/nginx/ 2>/dev/null | head -1)" 2>/dev/null | tee -a "$LOG" || true
+    tail -20 "$($NGINX -T 2>/dev/null | grep -o '# configuration file [^:]*' | grep 'investai-api' | head -1 | cut -d' ' -f4)" 2>/dev/null | tee -a "$LOG" || true
     exit 1
 fi

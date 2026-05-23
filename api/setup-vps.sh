@@ -53,6 +53,14 @@ echo ""
 echo "Configurando nginx..."
 bash "$ACTIONS_DIR/api/setup-nginx.sh"
 
+# Garante que o snippet seja gravavel pelo runner em deploys futuros
+SNIPPET="/etc/nginx/snippets/investai-api.conf"
+if [ -f "$SNIPPET" ]; then
+    chown root:"$RUNNER_USER" "$SNIPPET"
+    chmod 664 "$SNIPPET"
+    echo "OK: snippet com permissao de escrita para $RUNNER_USER"
+fi
+
 echo ""
 echo "=== Configuracao concluida! ==="
 echo "O sistema e agora 100% autonomo via GitHub Actions."
