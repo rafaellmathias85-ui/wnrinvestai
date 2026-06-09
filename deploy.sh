@@ -33,6 +33,16 @@ fail() {
   exit 1
 }
 
+run_nginx() {
+  if [ "$(id -u)" -eq 0 ]; then
+    nginx "$@"
+  elif sudo -n true 2>/dev/null; then
+    sudo nginx "$@"
+  else
+    nginx "$@"
+  fi
+}
+
 copy_if_missing() {
   local rel="$1"
   if [ ! -f "$APP_DIR/$rel" ] && [ -f "$APP_SOURCE/$rel" ]; then
@@ -195,8 +205,8 @@ mark health-api ok
 
 mark nginx started
 if command -v nginx >/dev/null 2>&1; then
-  nginx -t
-  nginx -s reload || true
+  run_nginx -t
+  run_nginx -s reload || true
 fi
 
 nginx_http="$(curl -sS --max-time 5 -o /tmp/wnrinvestai-nginx-health.out -w '%{http_code}' "http://127.0.0.1${APP_PREFIX}/api/health" 2>/dev/null || echo 000)"
