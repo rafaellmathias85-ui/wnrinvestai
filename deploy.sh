@@ -6,6 +6,7 @@ APP_DIR="${APP_DIR:-/var/www/wnrinvestai}"
 APP_PREFIX="${APP_PREFIX:-/wnrinvestai}"
 API_PORT="${API_PORT:-3001}"
 APP_NAME="${APP_NAME:-investai-api}"
+APP_HOST="${APP_HOST:-wnrtecnologia.com.br}"
 
 LOG_DIR="$APP_DIR/logs"
 WEB_DIR="$APP_DIR/investai"
@@ -209,7 +210,7 @@ if command -v nginx >/dev/null 2>&1; then
   run_nginx -s reload || true
 fi
 
-nginx_http="$(curl -sS --max-time 5 -o /tmp/wnrinvestai-nginx-health.out -w '%{http_code}' "http://127.0.0.1${APP_PREFIX}/api/health" 2>/dev/null || echo 000)"
+nginx_http="$(curl -sS --max-time 5 -H "Host: ${APP_HOST}" -o /tmp/wnrinvestai-nginx-health.out -w '%{http_code}' "http://127.0.0.1${APP_PREFIX}/api/health" 2>/dev/null || echo 000)"
 if [ "$nginx_http" != "200" ]; then
   log "AVISO: nginx nao respondeu 200 em ${APP_PREFIX}/api/health (HTTP $nginx_http). Verifique o bloco nginx do dominio."
 else
