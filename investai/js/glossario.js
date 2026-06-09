@@ -84,6 +84,15 @@ const GLOSSARIO = {
     desc:   'Veículo que reúne recursos de vários investidores e é gerido por um gestor profissional. Categorias principais: Renda Fixa, Multimercado (hedge funds), Ações e Cambial.',
     ideal:  'Acesso a estratégias sofisticadas. Verifique a taxa de administração — fundos com taxa acima de 1,5% raramente batem o CDI.',
   },
+  'Investimento Coletivo': {
+    nome:   'Investimento Coletivo / Crowdfunding',
+    risco:  'Médio a alto — depende do projeto, garantias e devedor',
+    liquid: 'Baixa — normalmente até o vencimento ou cronograma do projeto',
+    ir:     'Pode haver IR conforme a estrutura da oferta; valide no informe/prospecto',
+    fgc:    'Não — não possui cobertura do FGC',
+    desc:   'Modalidade usada por plataformas como INCO para acessar projetos da economia real, como imobiliário, energia, crédito privado, direitos creditórios ou venture capital. Cada oferta tem prazo, taxa, garantias e fluxo próprios.',
+    ideal:  'Diversificação de longo prazo com parcela pequena da carteira, aceitando baixa liquidez e risco de crédito/projeto.',
+  },
 };
 
 let _glossModal = null;

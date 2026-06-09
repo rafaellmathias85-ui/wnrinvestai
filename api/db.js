@@ -1,4 +1,5 @@
 const path = require('path');
+const fs = require('fs');
 
 let _real = null;
 try {
@@ -109,37 +110,64 @@ try {
     console.error('[db] better-sqlite3 indisponivel em producao:', e.message);
     throw e;
   }
-  console.warn('[db] better-sqlite3 indisponível — usando mock em memória (somente dev):', e.message);
-  const _plans = new Map();
-  const _users = new Map();
-  const _sessions = new Map();
-  const _resets = new Map();
+  console.warn('[db] better-sqlite3 indisponivel; usando api/data.local.json persistente (dev):', String(e.message).split('\n')[0]);
+  const STORE_FILE = path.join(__dirname, 'data.local.json');
+  const _empty = () => ({ plans: {}, users: {}, sessions: {}, resets: {} });
+  let _store = _empty();
+
+  function _load() {
+    try {
+      if (fs.existsSync(STORE_FILE)) {
+        const raw = JSON.parse(fs.readFileSync(STORE_FILE, 'utf8'));
+        _store = {
+          plans: raw.plans || {},
+          users: raw.users || {},
+          sessions: raw.sessions || {},
+          resets: raw.resets || {},
+        };
+      }
+    } catch (err) {
+      console.warn('[db] falha ao ler data.local.json; iniciando vazio:', err.message);
+      _store = _empty();
+    }
+  }
+
+  function _save() {
+    const tmp = `${STORE_FILE}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(_store, null, 2));
+    fs.renameSync(tmp, STORE_FILE);
+  }
+
+  _load();
 
   _real = {
-    getPlan(email) { return _plans.get(email) || null; },
+    getPlan(email) { return _store.plans[email] || null; },
     setPlan(email, plan, days) {
       const plan_exp = Date.now() + days * 86400000;
-      _plans.set(email, { email, plan, plan_exp, updated_at: Date.now() });
-      const u = _users.get(email);
+      _store.plans[email] = { email, plan, plan_exp, updated_at: Date.now() };
+      const u = _store.users[email];
       if (u) { u.plan = plan; u.plan_exp = plan_exp; }
+      _save();
     },
     createUser(email, name, passwordHash, googleId = null, avatar = null) {
-      _users.set(email, { email, name, password_hash: passwordHash, google_id: googleId, avatar, profile: null, plan: 'free', plan_exp: null, created_at: Date.now() });
+      _store.users[email] = { email, name, password_hash: passwordHash, google_id: googleId, avatar, profile: null, plan: 'free', plan_exp: null, created_at: Date.now() };
+      _save();
     },
-    getUserByEmail(email) { return _users.get(email) || null; },
-    updatePassword(email, hash) { const u = _users.get(email); if (u) u.password_hash = hash; },
-    updateUserProfile(email, profileJson) { const u = _users.get(email); if (u) u.profile = profileJson; },
-    createSession(token, email, expiresAt) { _sessions.set(token, { token, email, expires_at: expiresAt, created_at: Date.now() }); },
-    getSession(token) { const s = _sessions.get(token); return (s && s.expires_at > Date.now()) ? s : null; },
-    deleteSession(token) { _sessions.delete(token); },
-    deleteUserSessions(email) { _sessions.forEach((v, k) => { if (v.email === email) _sessions.delete(k); }); },
-    deleteExpiredSessions() { const now = Date.now(); _sessions.forEach((v, k) => { if (v.expires_at < now) _sessions.delete(k); }); },
+    getUserByEmail(email) { return _store.users[email] || null; },
+    updatePassword(email, hash) { const u = _store.users[email]; if (u) { u.password_hash = hash; _save(); } },
+    updateUserProfile(email, profileJson) { const u = _store.users[email]; if (u) { u.profile = profileJson; _save(); } },
+    createSession(token, email, expiresAt) { _store.sessions[token] = { token, email, expires_at: expiresAt, created_at: Date.now() }; _save(); },
+    getSession(token) { const s = _store.sessions[token]; return (s && s.expires_at > Date.now()) ? s : null; },
+    deleteSession(token) { delete _store.sessions[token]; _save(); },
+    deleteUserSessions(email) { Object.entries(_store.sessions).forEach(([k, v]) => { if (v.email === email) delete _store.sessions[k]; }); _save(); },
+    deleteExpiredSessions() { const now = Date.now(); Object.entries(_store.sessions).forEach(([k, v]) => { if (v.expires_at < now) delete _store.sessions[k]; }); _save(); },
     createPasswordReset(token, email, expiresAt) {
-      _resets.forEach((v, k) => { if (v.email === email && !v.used) v.used = true; });
-      _resets.set(token, { token, email, expires_at: expiresAt, used: false });
+      Object.values(_store.resets).forEach(v => { if (v.email === email && !v.used) v.used = true; });
+      _store.resets[token] = { token, email, expires_at: expiresAt, used: false };
+      _save();
     },
-    getPasswordReset(token) { const r = _resets.get(token); return (r && !r.used && r.expires_at > Date.now()) ? r : null; },
-    markPasswordResetUsed(token) { const r = _resets.get(token); if (r) r.used = true; },
+    getPasswordReset(token) { const r = _store.resets[token]; return (r && !r.used && r.expires_at > Date.now()) ? r : null; },
+    markPasswordResetUsed(token) { const r = _store.resets[token]; if (r) { r.used = true; _save(); } },
   };
 }
 

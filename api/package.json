@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test:auth": "node auth-smoke.js",
+    "test:ui": "node ui-smoke.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

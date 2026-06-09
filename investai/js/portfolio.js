@@ -18,6 +18,7 @@ const RENT_SUGESTAO = {
   'Fundo':          () => ({ v: (_cdi() * 1.00).toFixed(2), label: '100% CDI — fundo DI referência' }),
   'FII':            () => ({ v: '8.50', label: 'Rendimento médio FII (~8,5% a.a.)' }),
   'Ouro':           () => ({ v: '10.00', label: 'Ouro — estimativa histórica' }),
+  'Investimento Coletivo': null,
   'Ações':          null,
   'Cripto':         null,
   'ETF':            null,
@@ -159,7 +160,7 @@ function _liqLabel(inv) {
 
 // ── Calculadora de IR/IOF ──────────────────────────────
 function buildIRCalc(list, tot) {
-  const rfList = list.filter(i => ['CDB','Tesouro Direto','LCI/LCA','Fundo'].includes(i.tipo));
+  const rfList = list.filter(i => ['CDB','Tesouro Direto','LCI/LCA','Fundo','Investimento Coletivo'].includes(i.tipo));
   if (!rfList.length) return '';
 
   const ALIQ_IR = [22.5, 20, 17.5, 15];  // <180d, 180-360d, 361-720d, >720d
@@ -281,8 +282,8 @@ function buildPortForm() {
   const inv    = editingIdx >= 0 ? App.portfolio[editingIdx] : null;
   const isEdit = inv !== null;
   let tipos    = App.currentMode === 'cons'
-    ? ['CDB', 'Tesouro Direto', 'LCI/LCA', 'Ouro', 'Fundo']
-    : ['Ações', 'Cripto', 'FII', 'ETF', 'CDB', 'Fundo'];
+    ? ['CDB', 'Tesouro Direto', 'LCI/LCA', 'Ouro', 'Cripto', 'Fundo', 'Investimento Coletivo']
+    : ['Ações', 'Cripto', 'FII', 'ETF', 'CDB', 'Fundo', 'Investimento Coletivo'];
   if (isEdit && !tipos.includes(inv.tipo)) tipos = [inv.tipo, ...tipos];
   const q      = s => (s || '').replace(/"/g, '&quot;');
   const selOpts = tipos.map(t => `<option${isEdit && inv.tipo === t ? ' selected' : ''}>${t}</option>`).join('');

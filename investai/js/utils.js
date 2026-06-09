@@ -61,6 +61,7 @@ function badgeClass(type) {
     'FII':            'ia-b-amber',
     'Fundo':          'ia-b-blue',
     'ETF':            'ia-b-blue',
+    'Investimento Coletivo': 'ia-b-amber',
   };
   return map[type] || 'ia-b-neutral';
 }

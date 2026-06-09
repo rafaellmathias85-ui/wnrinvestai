@@ -4,6 +4,12 @@
   "scripts": {
     "dev":            "node api/server.js",
     "install:deps":   "npm install --prefix api",
-    "rebuild:sqlite": "npm rebuild better-sqlite3 --prefix api"
+    "rebuild:sqlite": "npm rebuild better-sqlite3 --prefix api",
+    "test:auth":      "npm run test:auth --prefix api",
+    "test:ui":        "npm run test:ui --prefix api",
+    "test:local":     "npm run test:auth && npm run test:ui",
+    "start:local":    "powershell -ExecutionPolicy Bypass -File scripts/start-local.ps1",
+    "stop:local":     "powershell -ExecutionPolicy Bypass -File scripts/stop-local.ps1",
+    "restart:local":  "powershell -ExecutionPolicy Bypass -File scripts/restart-local.ps1"
   }
 }

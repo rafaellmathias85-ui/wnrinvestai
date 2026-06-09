@@ -8,7 +8,7 @@ function calcScore(inv, totalSaldo) {
   else if (inv.rendimento < 6)  s -= 2;
 
   const safe  = ['CDB', 'Tesouro Direto', 'LCI/LCA'];
-  const risky = ['Ações', 'Cripto'];
+  const risky = ['Ações', 'Cripto', 'Investimento Coletivo'];
   if (App.currentMode === 'cons' && safe.includes(inv.tipo))  s += 1.5;
   if (App.currentMode === 'cons' && risky.includes(inv.tipo)) s -= 3;
   if (App.currentMode === 'av'  && risky.includes(inv.tipo))  s += 1;
@@ -81,7 +81,7 @@ function renderScore() {
       const pct  = tot > 0 ? (inv.saldo / tot * 100).toFixed(1) : '0.0';
 
       let alert;
-      if (App.currentMode === 'cons' && ['Ações','Cripto'].includes(inv.tipo))
+      if (App.currentMode === 'cons' && ['Ações','Cripto','Investimento Coletivo'].includes(inv.tipo))
         alert = `<span class="ia-badge ia-b-red">Alto risco</span>`;
       else if (inv.rendimento < 8 && App.currentMode === 'cons')
         alert = `<span class="ia-badge ia-b-amber">Rent. baixa</span>`;

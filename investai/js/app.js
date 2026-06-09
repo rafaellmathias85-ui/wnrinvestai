@@ -148,8 +148,9 @@ function renderTab(name) {
     diario:     renderDiario,
     metas:      renderMetas,
     painel:     renderPainel,
-    consultor:  renderConsultor,
-    onboarding: renderOnboarding,
+    consultor:       renderConsultor,
+    enriquecimento:  renderEnriquecimento,
+    onboarding:      renderOnboarding,
   };
   if (map[name]) map[name]();
   // Aplica glossário aos badges após render

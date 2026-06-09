@@ -48,9 +48,10 @@ function _metaCard(m, idx) {
           <div style="font-size:15px;font-weight:500;color:var(--platinum);margin-bottom:3px">${m.nome}</div>
           <div style="font-size:11px;color:var(--text-tertiary)">${m.descricao || ''}</div>
         </div>
-        <div style="display:flex;gap:6px">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
           <button class="ia-btn-ghost" style="font-size:10px" onclick="aportarMeta(${idx})">Registrar aporte</button>
           <button class="ia-btn-ghost" style="font-size:10px" onclick="analisarMeta(${idx})">Analisar com IA</button>
+          <button class="ia-btn-gold" style="font-size:10px;padding:8px 12px" onclick="acelerarMeta(${idx})">Acelerar com IA</button>
           <button class="ia-btn-ghost" style="font-size:10px;color:var(--red)" onclick="deletarMeta(${idx})">Apagar</button>
         </div>
       </div>
@@ -168,6 +169,53 @@ async function analisarMeta(idx) {
       700
     );
     box.innerHTML = `<div class="ia-ai-box"><div class="ia-ai-hd"><span class="ia-pulse"></span><span class="ia-ai-label">Análise da Meta — ${m.nome}</span></div><div class="ia-ai-bd">${fmt(r)}</div></div>`;
+  } catch(e) {
+    box.innerHTML = `<div style="color:var(--red);font-size:12px">Erro: ${e.message}</div>`;
+  }
+}
+
+async function acelerarMeta(idx) {
+  const m   = _getMetas()[idx];
+  const box = document.getElementById(`meta-ia-${idx}`);
+  if (!box) return;
+  box.style.display = 'block';
+  box.innerHTML = `<div class="ia-ai-box"><div class="ia-ai-hd"><span class="ia-pulse"></span><span class="ia-ai-label">Acelerando meta com IA</span></div><div class="ia-ai-bd">${dots()}</div></div>`;
+
+  const hoje  = new Date();
+  const prazo = new Date(m.prazo + 'T12:00:00');
+  const meses = Math.max(0, Math.ceil((prazo - hoje) / (30.44 * 86400000)));
+  const falta = Math.max(0, m.valor - m.atual);
+  const pct   = Math.round((m.atual / m.valor) * 100);
+  const aporteNecessario = meses > 0 ? Math.ceil(falta / meses) : falta;
+  const aporteAtual = Math.round(m.aporte || 0);
+  const deficitMensal = Math.max(0, aporteNecessario - aporteAtual);
+  const portfolio = (App.portfolio || [])
+    .map(i => `${i.tipo} ${i.nome}: ${fmtR(i.saldo)} a ${i.rendimento}% a.a.`)
+    .join('; ') || 'sem investimentos cadastrados';
+
+  try {
+    const r = await API.ask(
+      [
+        'ACELERAR_META',
+        `Meta: "${m.nome}".`,
+        `Descricao: ${m.descricao || 'sem descricao'}.`,
+        `Valor alvo: R$ ${Math.round(m.valor).toLocaleString('pt-BR')}.`,
+        `Acumulado: R$ ${Math.round(m.atual).toLocaleString('pt-BR')} (${pct}%).`,
+        `Falta: R$ ${Math.round(falta).toLocaleString('pt-BR')}.`,
+        `Prazo: ${meses > 0 ? meses + ' meses' : 'vencido'}.`,
+        `Aporte mensal atual: R$ ${aporteAtual.toLocaleString('pt-BR')}.`,
+        `Aporte mensal necessario sem rentabilidade: R$ ${aporteNecessario.toLocaleString('pt-BR')}.`,
+        `Deficit mensal: R$ ${deficitMensal.toLocaleString('pt-BR')}.`,
+        `Cenario atual: Selic ${(RealTime.macro.selic||14.50).toFixed(2)}%, CDI ${(RealTime.macro.cdi||14.40).toFixed(2)}%, IPCA ${(RealTime.macro.ipca||5.53).toFixed(2)}%, dolar R$ ${(RealTime.macro.dolar||5.20).toFixed(2)}.`,
+        `Portfolio atual: ${portfolio}.`,
+        'Entregue em portugues do Brasil, com linguagem direta.',
+        'Inclua: 1) pergunta inicial se o usuario quer tentar encurtar prazo ou reduzir aporte; 2) tres caminhos numericos para acelerar a meta; 3) opcoes educacionais de investimento para horizontes de 1, 2, 3, 4 e 5 anos; 4) riscos e cuidados; 5) proximos 7 dias.',
+        'Nao prometa rentabilidade e nao trate como recomendacao de compra. Use "opcoes para estudar" e cite que deve validar suitability, liquidez, taxas e IR.'
+      ].join('\n'),
+      'Planejador financeiro e estrategista de alocacao. Nao de recomendacao personalizada de compra; entregue alternativas educacionais, numericas e acionaveis.',
+      1200
+    );
+    box.innerHTML = `<div class="ia-ai-box"><div class="ia-ai-hd"><span class="ia-pulse"></span><span class="ia-ai-label">Plano para acelerar — ${m.nome}</span></div><div class="ia-ai-bd">${fmt(r)}</div></div>`;
   } catch(e) {
     box.innerHTML = `<div style="color:var(--red);font-size:12px">Erro: ${e.message}</div>`;
   }
