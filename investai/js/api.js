@@ -36,7 +36,7 @@ const API = {
 
     // ── Tentativa 1: Backend proxy (chave protegida no servidor) ──
     try {
-      const r = await fetch('/investai/api/ai', {
+      const r = await fetch('/wnrinvestai/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: userMessage, system: fullSystem, maxTokens }),

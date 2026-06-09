@@ -47,7 +47,7 @@ const RealTime = {
 
     // Tentativa 1: Backend proxy /api/b3quote (sem CORS, cache server-side)
     try {
-      const res = await fetch(`/investai/api/b3quote?tickers=${tickers.join(',')}`);
+      const res = await fetch(`/wnrinvestai/api/b3quote?tickers=${tickers.join(',')}`);
       if (res.ok) {
         const raw = await res.json();
         if (Object.keys(raw).length) {

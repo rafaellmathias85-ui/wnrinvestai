@@ -161,7 +161,7 @@ printf '%s\n' "${GITHUB_SHA:-manual-deploy}" > "$APP_DIR/.deploy-version"
 mark env started
 set_env_value PORT "$API_PORT" default
 set_env_value NODE_ENV production default
-set_env_value APP_BASE_URL "${APP_BASE_URL:-https://wnrtecnologia.com.br${APP_PREFIX}}" default
+set_env_value APP_BASE_URL "${APP_BASE_URL:-https://wnrtecnologia.com.br}" default
 set_env_value ANTHROPIC_API_KEY "${ANTHROPIC_API_KEY:-}" always
 set_env_value MP_ACCESS_TOKEN "${MP_ACCESS_TOKEN:-}" always
 set_env_value SMTP_HOST "${SMTP_HOST:-}" always

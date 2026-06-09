@@ -54,7 +54,7 @@ const Auth = {
     const headers = { 'Content-Type': 'application/json' };
     if (session?.token) headers['Authorization'] = `Bearer ${session.token}`;
 
-    const res = await fetch(`/investai/api/auth${path}`, {
+    const res = await fetch(`/wnrinvestai/api/auth${path}`, {
       method,
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -298,7 +298,7 @@ const Auth = {
     const s = this.getSession();
     if (!s || this.ADMINS.includes(s.email)) return;
     try {
-      const r = await fetch(`/investai/api/plan?email=${encodeURIComponent(s.email)}`);
+      const r = await fetch(`/wnrinvestai/api/plan?email=${encodeURIComponent(s.email)}`);
       if (!r.ok) return;
       const { plan, planExp } = await r.json();
       if (plan && plan !== 'free') {

@@ -179,7 +179,7 @@ router.post('/reset-request', async (req, res, next) => {
     db.createPasswordReset(token, email, Date.now() + RESET_TTL);
 
     const base = process.env.APP_BASE_URL || 'http://localhost:3001';
-    const link = `${base}/investai/login.html?reset=${token}`;
+    const link = `${base}/wnrinvestai/login.html?reset=${token}`;
     await _sendResetEmail(email, link);
   } catch (err) {
     console.error('[auth/reset-request]', err.message);
