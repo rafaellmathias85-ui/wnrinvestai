@@ -58,6 +58,7 @@ const Auth = {
       method,
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(10000),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -211,6 +212,7 @@ const Auth = {
     if (s.localOnly) return true;
     try {
       const data = await this._api('GET', '/me');
+      if (!data || !data.email) return true; // resposta inesperada: mantém sessão local
       // Atualiza cache com dados frescos do servidor
       const users = this._users();
       if (users[s.email]) {
@@ -221,9 +223,19 @@ const Auth = {
       localStorage.setItem(this.USERS_KEY, JSON.stringify(users));
       return true;
     } catch (e) {
+      // Timeout ou falha de rede: mantém sessão local ativa (não deslogar)
+      if (e.name === 'TimeoutError' || e instanceof TypeError) {
+        console.warn('[auth] validateSession: servidor indisponivel, mantendo sessao local');
+        return true;
+      }
+      // Apenas 401/403 (token invalido) derruba a sessao
+      if (e.status === 401 || e.status === 403) {
+        console.warn('[auth] validateSession: token invalido, sessao encerrada');
+        localStorage.removeItem(this.SESSION_KEY);
+        return false;
+      }
       console.warn('[auth] validateSession falhou:', e.message);
-      localStorage.removeItem(this.SESSION_KEY);
-      return false;
+      return true; // em caso de duvida, mantém sessão
     }
   },
 
